@@ -51,18 +51,25 @@ class PolymarketClient:
         """Lazy-init the CLOB client (creates API creds on first call)."""
         if self._client is None:
             if self.settings.PRIVATE_KEY:
-                self._client = ClobClient(
-                    self.settings.CLOB_HOST,
-                    key=self.settings.PRIVATE_KEY,
-                    chain_id=self.settings.CHAIN_ID,
-                    signature_type=0,  # EOA wallet
-                )
-                self._client.set_api_creds(self._client.create_or_derive_api_creds())
-                logger.info("Polymarket CLOB client authenticated")
+                try:
+                    self._client = ClobClient(
+                        self.settings.CLOB_HOST,
+                        key=self.settings.PRIVATE_KEY,
+                        chain_id=self.settings.CHAIN_ID,
+                        signature_type=0,  # EOA wallet
+                    )
+                    creds = self._client.create_or_derive_api_creds()
+                    self._client.set_api_creds(creds)
+                    logger.info("Polymarket CLOB client authenticated successfully")
+                except Exception as e:
+                    logger.error(f"CLOB client auth failed: {e}")
+                    # Fall back to read-only
+                    self._client = ClobClient(self.settings.CLOB_HOST)
+                    logger.info("Falling back to read-only CLOB client")
             else:
                 # Read-only mode
                 self._client = ClobClient(self.settings.CLOB_HOST)
-                logger.info("Polymarket CLOB client in read-only mode")
+                logger.info("Polymarket CLOB client in read-only mode (no private key)")
         return self._client
 
     async def _rate_limit(self):
@@ -90,6 +97,8 @@ class PolymarketClient:
                         resp = client.get_markets(next_cursor=next_cursor)
                     else:
                         resp = client.get_markets()
+                    logger.debug(f"get_markets page {page}: type={type(resp).__name__}, "
+                               f"len={len(resp) if hasattr(resp, '__len__') else 'N/A'}")
                 except Exception as e:
                     logger.warning(f"get_markets page {page} failed: {e}")
                     break
@@ -98,10 +107,13 @@ class PolymarketClient:
                 if isinstance(resp, list):
                     data = resp
                     next_cursor = ""
+                    logger.debug(f"  Page {page}: list with {len(data)} items")
                 elif isinstance(resp, dict):
                     data = resp.get("data", resp.get("markets", []))
                     next_cursor = resp.get("next_cursor", "")
+                    logger.debug(f"  Page {page}: dict with {len(data)} items, cursor='{next_cursor[:20] if next_cursor else ''}'")
                 else:
+                    logger.warning(f"  Page {page}: unexpected type {type(resp)}")
                     break
 
                 if not data:
