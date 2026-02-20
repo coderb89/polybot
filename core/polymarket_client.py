@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import httpx
 from py_clob_client.client import ClobClient
 from py_clob_client.clob_types import (
-    LimitOrderArgs, MarketOrderArgs, OrderType, OrderBookSummary
+    OrderArgs, MarketOrderArgs, OrderType, OrderBookSummary
 )
 from py_clob_client.order_builder.constants import BUY, SELL
 
@@ -171,13 +171,13 @@ class PolymarketClient:
         await self._rate_limit()
         try:
             client = self._get_client()
-            order_args = LimitOrderArgs(
+            order_args = OrderArgs(
                 token_id=token_id,
                 price=price,
                 size=size,
                 side=side_const,
             )
-            signed = client.create_limit_order(order_args)
+            signed = client.create_order(order_args)
             resp = client.post_order(signed, OrderType.GTC)
 
             if resp.get("success"):
