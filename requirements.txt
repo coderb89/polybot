@@ -4,8 +4,8 @@
 # Polymarket official client
 py-clob-client>=0.34.0
 
-# Web3 (pin version to avoid conflicts with py-clob-client)
-web3==6.14.0
+# Web3 (let py-clob-client resolve compatible version)
+web3>=6.0.0
 
 # HTTP client (async)
 httpx>=0.27.0
