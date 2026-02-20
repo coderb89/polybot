@@ -1,0 +1,286 @@
+"""
+Portfolio tracker - tracks all positions, PnL, and trade history.
+Persists to SQLite for the dashboard.
+"""
+
+import sqlite3
+import json
+import logging
+from datetime import datetime, date
+from dataclasses import dataclass
+from typing import List, Optional, Dict
+from pathlib import Path
+
+logger = logging.getLogger("polybot.portfolio")
+
+
+@dataclass
+class Trade:
+    id: Optional[int]
+    timestamp: str
+    strategy: str
+    market_id: str
+    market_question: str
+    side: str
+    token_id: str
+    price: float
+    size_usd: float
+    edge_pct: float
+    dry_run: bool
+    order_id: Optional[str] = None
+    pnl: Optional[float] = None
+    status: str = "open"
+
+
+class Portfolio:
+    def __init__(self, settings):
+        self.settings = settings
+        self.initial_capital = settings.INITIAL_CAPITAL
+        self.db_path = settings.DB_PATH
+        self._init_db()
+
+    def _get_conn(self):
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _init_db(self):
+        with self._get_conn() as conn:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS trades (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    strategy TEXT NOT NULL,
+                    market_id TEXT,
+                    market_question TEXT,
+                    side TEXT NOT NULL,
+                    token_id TEXT,
+                    price REAL NOT NULL,
+                    size_usd REAL NOT NULL,
+                    edge_pct REAL,
+                    dry_run INTEGER DEFAULT 1,
+                    order_id TEXT,
+                    pnl REAL,
+                    status TEXT DEFAULT 'open'
+                );
+
+                CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    total_value REAL NOT NULL,
+                    cash_balance REAL NOT NULL,
+                    deployed_capital REAL NOT NULL,
+                    total_pnl REAL NOT NULL,
+                    daily_pnl REAL NOT NULL,
+                    trade_count INTEGER NOT NULL,
+                    win_rate REAL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_trades_timestamp ON trades(timestamp);
+                CREATE INDEX IF NOT EXISTS idx_trades_strategy ON trades(strategy);
+                CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
+            """)
+        logger.info(f"Database initialized at {self.db_path}")
+
+    def log_trade(self, trade: Trade) -> int:
+        with self._get_conn() as conn:
+            cur = conn.execute("""
+                INSERT INTO trades
+                (timestamp, strategy, market_id, market_question, side, token_id,
+                 price, size_usd, edge_pct, dry_run, order_id, pnl, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                datetime.utcnow().isoformat(),
+                trade.strategy, trade.market_id, trade.market_question,
+                trade.side, trade.token_id, trade.price, trade.size_usd,
+                trade.edge_pct, int(trade.dry_run), trade.order_id,
+                trade.pnl, trade.status
+            ))
+            trade_id = cur.lastrowid
+            logger.debug(f"Trade logged: id={trade_id} strategy={trade.strategy} size=${trade.size_usd:.2f}")
+            return trade_id
+
+    def update_trade_pnl(self, trade_id: int, pnl: float, status: str = "resolved"):
+        with self._get_conn() as conn:
+            conn.execute(
+                "UPDATE trades SET pnl=?, status=? WHERE id=?",
+                (pnl, status, trade_id)
+            )
+
+    def get_total_pnl(self) -> float:
+        with self._get_conn() as conn:
+            row = conn.execute("SELECT COALESCE(SUM(pnl), 0) as total FROM trades WHERE pnl IS NOT NULL").fetchone()
+            return row["total"]
+
+    def get_daily_pnl(self) -> float:
+        today = date.today().isoformat()
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(SUM(pnl), 0) as daily FROM trades WHERE DATE(timestamp)=? AND pnl IS NOT NULL",
+                (today,)
+            ).fetchone()
+            return row["daily"]
+
+    def get_deployed_capital(self) -> float:
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(SUM(size_usd), 0) as deployed FROM trades WHERE status='open'"
+            ).fetchone()
+            return row["deployed"]
+
+    def get_win_rate(self) -> float:
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) as total, SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins "
+                "FROM trades WHERE pnl IS NOT NULL"
+            ).fetchone()
+            total = row["total"]
+            wins = row["wins"] or 0
+            return (wins / total * 100) if total > 0 else 0.0
+
+    def get_portfolio_value(self) -> float:
+        return self.initial_capital + self.get_total_pnl()
+
+    def get_summary(self) -> str:
+        total_pnl = self.get_total_pnl()
+        daily_pnl = self.get_daily_pnl()
+        deployed = self.get_deployed_capital()
+        portfolio_val = self.get_portfolio_value()
+        win_rate = self.get_win_rate()
+        pct_return = (total_pnl / self.initial_capital * 100) if self.initial_capital > 0 else 0
+
+        return (
+            f"Portfolio Value: ${portfolio_val:.2f}\n"
+            f"Total PnL: ${total_pnl:+.2f} ({pct_return:+.1f}%)\n"
+            f"Today's PnL: ${daily_pnl:+.2f}\n"
+            f"Deployed: ${deployed:.2f}\n"
+            f"Win Rate: {win_rate:.1f}%"
+        )
+
+    def snapshot(self):
+        with self._get_conn() as conn:
+            conn.execute("""
+                INSERT INTO portfolio_snapshots
+                (timestamp, total_value, cash_balance, deployed_capital, total_pnl, daily_pnl, trade_count, win_rate)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                datetime.utcnow().isoformat(),
+                self.get_portfolio_value(),
+                self.initial_capital + self.get_total_pnl() - self.get_deployed_capital(),
+                self.get_deployed_capital(),
+                self.get_total_pnl(),
+                self.get_daily_pnl(),
+                self._count_trades(),
+                self.get_win_rate()
+            ))
+
+    def _count_trades(self) -> int:
+        with self._get_conn() as conn:
+            return conn.execute("SELECT COUNT(*) FROM trades").fetchone()[0]
+
+    # ─── Dashboard JSON Export ────────────────────────────────────────────────
+
+    def export_dashboard_json(self, output_path: str = "dashboard/dashboard_data.json"):
+        """Export all dashboard data to a single JSON file for GitHub Pages."""
+        total_pnl = self.get_total_pnl()
+        daily_pnl = self.get_daily_pnl()
+        deployed = self.get_deployed_capital()
+        portfolio_val = self.get_portfolio_value()
+        win_rate = self.get_win_rate()
+        total_trades = self._count_trades()
+        pct_return = (total_pnl / self.initial_capital * 100) if self.initial_capital > 0 else 0
+
+        # Summary
+        summary = {
+            "portfolio_value": round(portfolio_val, 2),
+            "total_pnl": round(total_pnl, 2),
+            "daily_pnl": round(daily_pnl, 2),
+            "pct_return": round(pct_return, 2),
+            "deployed_capital": round(deployed, 2),
+            "win_rate": round(win_rate, 1),
+            "total_trades": total_trades,
+            "initial_capital": self.initial_capital,
+        }
+
+        # Recent trades
+        with self._get_conn() as conn:
+            trade_rows = conn.execute(
+                "SELECT * FROM trades ORDER BY timestamp DESC LIMIT 50"
+            ).fetchall()
+            trades = [dict(r) for r in trade_rows]
+
+        # PnL series
+        with self._get_conn() as conn:
+            pnl_rows = conn.execute("""
+                SELECT DATE(timestamp) as day,
+                       COALESCE(SUM(pnl), 0) as daily_pnl,
+                       COUNT(*) as trade_count
+                FROM trades
+                WHERE pnl IS NOT NULL AND timestamp >= DATE('now', '-30 days')
+                GROUP BY DATE(timestamp)
+                ORDER BY day
+            """).fetchall()
+
+            cumulative = self.initial_capital
+            pnl_series = []
+            for r in pnl_rows:
+                cumulative += r["daily_pnl"]
+                pnl_series.append({
+                    "day": r["day"],
+                    "daily_pnl": round(r["daily_pnl"], 4),
+                    "portfolio_value": round(cumulative, 2),
+                    "trade_count": r["trade_count"],
+                })
+
+        # Strategy breakdown
+        with self._get_conn() as conn:
+            strat_rows = conn.execute("""
+                SELECT strategy,
+                       COUNT(*) as total_trades,
+                       COALESCE(SUM(pnl), 0) as total_pnl,
+                       COALESCE(AVG(pnl), 0) as avg_pnl,
+                       COALESCE(MAX(pnl), 0) as best_trade,
+                       COALESCE(MIN(pnl), 0) as worst_trade,
+                       SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+                       COALESCE(SUM(size_usd), 0) as total_volume
+                FROM trades
+                WHERE pnl IS NOT NULL
+                GROUP BY strategy
+            """).fetchall()
+            strategy_breakdown = [dict(r) for r in strat_rows]
+
+        # Open positions
+        with self._get_conn() as conn:
+            pos_rows = conn.execute(
+                "SELECT * FROM trades WHERE status='open' ORDER BY timestamp DESC"
+            ).fetchall()
+            open_positions = [dict(r) for r in pos_rows]
+
+        # Health
+        last_trade = trades[0]["timestamp"] if trades else None
+        bot_active = False
+        if last_trade:
+            try:
+                last_dt = datetime.fromisoformat(last_trade)
+                bot_active = (datetime.utcnow() - last_dt).total_seconds() < 3600
+            except Exception:
+                pass
+
+        dashboard_data = {
+            "summary": summary,
+            "trades": trades,
+            "pnl_series": pnl_series,
+            "strategy_breakdown": strategy_breakdown,
+            "open_positions": open_positions,
+            "health": {
+                "bot_active": bot_active,
+                "last_trade": last_trade,
+                "timestamp": datetime.utcnow().isoformat(),
+            },
+            "exported_at": datetime.utcnow().isoformat(),
+        }
+
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(dashboard_data, indent=2, default=str))
+        logger.info(f"Dashboard data exported to {output_path}")

@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PolyBot Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: #0a0e1a; color: #e2e8f0; min-height: 100vh; }
+
+  header { background: linear-gradient(135deg, #1a1f36 0%, #0d1117 100%);
+           padding: 20px 32px; border-bottom: 1px solid #2d3748; display: flex;
+           align-items: center; justify-content: space-between; }
+  header h1 { font-size: 1.5rem; font-weight: 700; color: #63b3ed; }
+  .status-badge { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; animation: pulse 2s infinite; }
+  .dot.live { background: #48bb78; }
+  .dot.offline { background: #fc8181; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  .container { max-width: 1400px; margin: 0 auto; padding: 24px 32px; }
+
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+                gap: 16px; margin-bottom: 28px; }
+  .stat-card { background: #1a1f36; border: 1px solid #2d3748; border-radius: 12px;
+               padding: 20px; transition: border-color 0.2s; }
+  .stat-card:hover { border-color: #4a5568; }
+  .stat-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;
+                color: #718096; margin-bottom: 8px; }
+  .stat-value { font-size: 1.75rem; font-weight: 700; }
+  .stat-value.positive { color: #48bb78; }
+  .stat-value.negative { color: #fc8181; }
+  .stat-value.neutral { color: #63b3ed; }
+  .stat-sub { font-size: 0.8rem; color: #718096; margin-top: 4px; }
+
+  .charts-row { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 24px; }
+  .chart-card { background: #1a1f36; border: 1px solid #2d3748; border-radius: 12px; padding: 20px; }
+  .chart-card h3 { font-size: 0.9rem; color: #a0aec0; margin-bottom: 16px; text-transform: uppercase;
+                   letter-spacing: 0.05em; }
+  .chart-wrapper { position: relative; height: 240px; }
+
+  .tables-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .table-card { background: #1a1f36; border: 1px solid #2d3748; border-radius: 12px;
+                padding: 20px; overflow: hidden; }
+  .table-card h3 { font-size: 0.9rem; color: #a0aec0; margin-bottom: 16px;
+                   text-transform: uppercase; letter-spacing: 0.05em; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+  th { text-align: left; padding: 8px 10px; color: #718096; font-weight: 600;
+       border-bottom: 1px solid #2d3748; }
+  td { padding: 8px 10px; border-bottom: 1px solid #1e2535; color: #cbd5e0; max-width: 200px;
+       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #1e2a4a; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px;
+           font-size: 0.7rem; font-weight: 600; }
+  .badge-weather { background: #2d3748; color: #63b3ed; }
+  .badge-mm { background: #2d3748; color: #fbd38d; }
+  .badge-arb { background: #2d3748; color: #9f7aea; }
+  .badge-dry { background: #1a2035; color: #718096; }
+
+  .pnl-pos { color: #48bb78; }
+  .pnl-neg { color: #fc8181; }
+
+  .refresh-timer { font-size: 0.75rem; color: #4a5568; text-align: right;
+                   margin-top: 16px; }
+
+  .loading { text-align: center; padding: 60px; color: #4a5568; font-size: 1.1rem; }
+
+  @media (max-width: 900px) {
+    .charts-row, .tables-row { grid-template-columns: 1fr; }
+    .stats-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+    .container { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>PolyBot Dashboard</h1>
+  <div class="status-badge">
+    <div class="dot offline" id="status-dot"></div>
+    <span id="status-text">Loading...</span>
+  </div>
+</header>
+
+<div class="container">
+  <div id="loading" class="loading">Loading dashboard data...</div>
+
+  <div id="content" style="display:none">
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-label">Portfolio Value</div>
+        <div class="stat-value neutral" id="portfolio-value">--</div></div>
+      <div class="stat-card"><div class="stat-label">Total PnL</div>
+        <div class="stat-value" id="total-pnl">--</div>
+        <div class="stat-sub" id="pct-return">--</div></div>
+      <div class="stat-card"><div class="stat-label">Today's PnL</div>
+        <div class="stat-value" id="daily-pnl">--</div></div>
+      <div class="stat-card"><div class="stat-label">Win Rate</div>
+        <div class="stat-value neutral" id="win-rate">--</div>
+        <div class="stat-sub" id="total-trades">--</div></div>
+      <div class="stat-card"><div class="stat-label">Deployed</div>
+        <div class="stat-value neutral" id="deployed">--</div></div>
+      <div class="stat-card"><div class="stat-label">Return %</div>
+        <div class="stat-value" id="pct-return-card">--</div></div>
+    </div>
+
+    <div class="charts-row">
+      <div class="chart-card">
+        <h3>Portfolio Growth</h3>
+        <div class="chart-wrapper"><canvas id="growthChart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Strategy PnL Breakdown</h3>
+        <div class="chart-wrapper"><canvas id="strategyChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="tables-row">
+      <div class="table-card">
+        <h3>Recent Trades</h3>
+        <table>
+          <thead><tr><th>Time</th><th>Strategy</th><th>Market</th><th>PnL</th></tr></thead>
+          <tbody id="trades-tbody"></tbody>
+        </table>
+      </div>
+      <div class="table-card">
+        <h3>Strategy Performance</h3>
+        <table>
+          <thead><tr><th>Strategy</th><th>Trades</th><th>PnL</th><th>Win%</th></tr></thead>
+          <tbody id="strategy-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="refresh-timer" id="refresh-timer"></div>
+  </div>
+</div>
+
+<script>
+let growthChart, strategyChart;
+
+function fmt(n, prefix) {
+  prefix = prefix || '$';
+  if (n === null || n === undefined) return '--';
+  var abs = Math.abs(n);
+  return (n < 0 ? '-' : '') + prefix + abs.toFixed(2);
+}
+
+function colorClass(n) {
+  return n > 0 ? 'pnl-pos' : n < 0 ? 'pnl-neg' : '';
+}
+
+function strategyBadge(s) {
+  var map = {
+    'weather_arb': ['badge-weather', 'Weather'],
+    'market_maker': ['badge-mm', 'MM'],
+    'cross_platform_arb': ['badge-arb', 'Arb'],
+  };
+  var entry = map[s] || ['', s];
+  return '<span class="badge ' + entry[0] + '">' + entry[1] + '</span>';
+}
+
+function strategyLabel(s) {
+  var map = {
+    'weather_arb': 'Weather',
+    'market_maker': 'MM',
+    'cross_platform_arb': 'Arb',
+  };
+  return map[s] || s;
+}
+
+function renderDashboard(data) {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('content').style.display = 'block';
+
+  var s = data.summary;
+  document.getElementById('portfolio-value').textContent = fmt(s.portfolio_value);
+
+  var pnlEl = document.getElementById('total-pnl');
+  pnlEl.textContent = fmt(s.total_pnl);
+  pnlEl.className = 'stat-value ' + (s.total_pnl >= 0 ? 'positive' : 'negative');
+
+  var dailyEl = document.getElementById('daily-pnl');
+  dailyEl.textContent = fmt(s.daily_pnl);
+  dailyEl.className = 'stat-value ' + (s.daily_pnl >= 0 ? 'positive' : 'negative');
+
+  document.getElementById('pct-return').textContent = (s.pct_return >= 0 ? '+' : '') + s.pct_return + '%';
+  document.getElementById('win-rate').textContent = s.win_rate + '%';
+  document.getElementById('total-trades').textContent = s.total_trades + ' total trades';
+  document.getElementById('deployed').textContent = fmt(s.deployed_capital);
+
+  var pctEl = document.getElementById('pct-return-card');
+  pctEl.textContent = (s.pct_return >= 0 ? '+' : '') + s.pct_return + '%';
+  pctEl.className = 'stat-value ' + (s.pct_return >= 0 ? 'positive' : 'negative');
+
+  // Health status
+  var dot = document.getElementById('status-dot');
+  var txt = document.getElementById('status-text');
+  if (data.health && data.health.bot_active) {
+    dot.className = 'dot live';
+    txt.textContent = 'Bot Active';
+  } else if (data.health && data.health.last_trade) {
+    dot.className = 'dot offline';
+    txt.textContent = 'Last: ' + data.health.last_trade.slice(0, 16);
+  } else {
+    dot.className = 'dot offline';
+    txt.textContent = 'No activity yet';
+  }
+
+  // Growth chart
+  var pnlSeries = data.pnl_series || [];
+  if (pnlSeries.length > 0) {
+    var labels = pnlSeries.map(function(d) { return d.day.slice(5); });
+    var values = pnlSeries.map(function(d) { return d.portfolio_value; });
+
+    if (growthChart) growthChart.destroy();
+    var ctx = document.getElementById('growthChart').getContext('2d');
+    growthChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Portfolio Value ($)',
+          data: values,
+          borderColor: '#63b3ed',
+          backgroundColor: 'rgba(99,179,237,0.1)',
+          borderWidth: 2,
+          pointRadius: 3,
+          fill: true,
+          tension: 0.3,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: '#1e2535' }, ticks: { color: '#718096', maxTicksLimit: 8 } },
+          y: { grid: { color: '#1e2535' }, ticks: { color: '#718096',
+               callback: function(v) { return '$' + v.toFixed(0); } } }
+        }
+      }
+    });
+  }
+
+  // Strategy doughnut chart
+  var breakdown = data.strategy_breakdown || [];
+  if (breakdown.length > 0) {
+    var sLabels = breakdown.map(function(d) { return strategyLabel(d.strategy); });
+    var sValues = breakdown.map(function(d) { return Math.abs(d.total_pnl); });
+    var sColors = ['#63b3ed', '#fbd38d', '#9f7aea'];
+
+    if (strategyChart) strategyChart.destroy();
+    var ctx2 = document.getElementById('strategyChart').getContext('2d');
+    strategyChart = new Chart(ctx2, {
+      type: 'doughnut',
+      data: { labels: sLabels, datasets: [{ data: sValues, backgroundColor: sColors, borderWidth: 0 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { color: '#a0aec0', padding: 16 } } }
+      }
+    });
+
+    // Strategy table
+    var stratTbody = document.getElementById('strategy-tbody');
+    stratTbody.innerHTML = breakdown.map(function(d) {
+      var winPct = d.total_trades > 0 ? ((d.wins / d.total_trades) * 100).toFixed(0) : 0;
+      return '<tr>' +
+        '<td>' + strategyLabel(d.strategy) + '</td>' +
+        '<td>' + d.total_trades + '</td>' +
+        '<td class="' + colorClass(d.total_pnl) + '">' + fmt(d.total_pnl) + '</td>' +
+        '<td>' + winPct + '%</td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  // Trades table
+  var trades = data.trades || [];
+  var tradesTbody = document.getElementById('trades-tbody');
+  if (trades.length === 0) {
+    tradesTbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#4a5568">No trades yet</td></tr>';
+  } else {
+    tradesTbody.innerHTML = trades.slice(0, 20).map(function(t) {
+      var time = t.timestamp ? t.timestamp.slice(11, 16) : '--';
+      var question = (t.market_question || '').slice(0, 35) + ((t.market_question || '').length > 35 ? '...' : '');
+      var pnlTxt = t.pnl !== null ? '<span class="' + colorClass(t.pnl) + '">' + fmt(t.pnl) + '</span>' : '<span style="color:#4a5568">open</span>';
+      var dryTag = t.dry_run ? '<span class="badge badge-dry">DRY</span> ' : '';
+      return '<tr>' +
+        '<td style="color:#718096">' + time + '</td>' +
+        '<td>' + dryTag + strategyBadge(t.strategy) + '</td>' +
+        '<td title="' + (t.market_question || '') + '">' + question + '</td>' +
+        '<td>' + pnlTxt + '</td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  // Refresh timer
+  if (data.exported_at) {
+    document.getElementById('refresh-timer').textContent = 'Data exported: ' + data.exported_at.slice(0, 19) + ' UTC';
+  }
+}
+
+// Load data from JSON file
+fetch('dashboard_data.json')
+  .then(function(r) { return r.json(); })
+  .then(function(data) { renderDashboard(data); })
+  .catch(function(err) {
+    document.getElementById('loading').textContent = 'No dashboard data yet. The bot needs to run at least once.';
+    console.error('Failed to load dashboard data:', err);
+  });
+</script>
+</body>
+</html>
