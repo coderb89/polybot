@@ -214,7 +214,10 @@ class WeatherArbStrategy:
         except Exception:
             return None
 
-        if hours_until > self.settings.WEATHER_MAX_HOURS_OUT or hours_until < 1:
+        if hours_until > self.settings.WEATHER_MAX_HOURS_OUT:
+            return None
+        if hours_until < self.settings.WEATHER_MIN_HOURS_OUT:
+            logger.debug(f"Skipping {question[:40]}: resolves in {hours_until:.0f}h (min {self.settings.WEATHER_MIN_HOURS_OUT}h)")
             return None
 
         predicted_high, confidence = self.weather_api.get_high_probability(forecast, target_date)

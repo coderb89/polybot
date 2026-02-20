@@ -104,6 +104,9 @@
         <div class="stat-value neutral" id="deployed">--</div></div>
       <div class="stat-card"><div class="stat-label">Return %</div>
         <div class="stat-value" id="pct-return-card">--</div></div>
+      <div class="stat-card"><div class="stat-label">Wallet USDC</div>
+        <div class="stat-value neutral" id="wallet-usdc">--</div>
+        <div class="stat-sub" id="wallet-matic">--</div></div>
     </div>
 
     <div class="charts-row">
@@ -115,6 +118,14 @@
         <h3>Strategy PnL Breakdown</h3>
         <div class="chart-wrapper"><canvas id="strategyChart"></canvas></div>
       </div>
+    </div>
+
+    <div class="table-card" style="margin-bottom:20px" id="positions-card">
+      <h3>Open Positions</h3>
+      <table>
+        <thead><tr><th>Opened</th><th>Strategy</th><th>Market</th><th>Invested</th><th>Entry Price</th><th>Edge</th></tr></thead>
+        <tbody id="positions-tbody"></tbody>
+      </table>
     </div>
 
     <div class="tables-row">
@@ -291,6 +302,35 @@ function renderDashboard(data) {
         '<td>' + dryTag + strategyBadge(t.strategy) + '</td>' +
         '<td title="' + (t.market_question || '') + '">' + question + '</td>' +
         '<td>' + pnlTxt + '</td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  // Wallet balances
+  if (data.wallet) {
+    document.getElementById('wallet-usdc').textContent = '$' + (data.wallet.usdc || 0).toFixed(2);
+    document.getElementById('wallet-matic').textContent = (data.wallet.matic || 0).toFixed(4) + ' MATIC';
+  }
+
+  // Open positions table
+  var positions = data.open_positions || [];
+  var posTbody = document.getElementById('positions-tbody');
+  if (positions.length === 0) {
+    posTbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#4a5568">No open positions</td></tr>';
+  } else {
+    posTbody.innerHTML = positions.map(function(p) {
+      var opened = p.timestamp ? p.timestamp.slice(0, 10) : '--';
+      var question = (p.market_question || '').slice(0, 45) + ((p.market_question || '').length > 45 ? '...' : '');
+      var invested = '$' + (p.size_usd || 0).toFixed(2);
+      var price = (p.price || 0).toFixed(4);
+      var edge = ((p.edge_pct || 0) * 100).toFixed(1) + '%';
+      return '<tr>' +
+        '<td style="color:#718096">' + opened + '</td>' +
+        '<td>' + strategyBadge(p.strategy) + '</td>' +
+        '<td title="' + (p.market_question || '') + '">' + question + '</td>' +
+        '<td style="color:#63b3ed;font-weight:600">' + invested + '</td>' +
+        '<td>' + price + '</td>' +
+        '<td style="color:#48bb78">' + edge + '</td>' +
         '</tr>';
     }).join('');
   }

@@ -7,7 +7,7 @@ Also detects single-platform arbitrage when YES + NO < $1.00.
 import asyncio
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from typing import List, Optional, Dict
 
@@ -137,6 +137,17 @@ class CrossPlatformArbStrategy:
             if condition_id in self.executed_arbs:
                 if time.time() - self.executed_arbs[condition_id] < 3600:
                     continue
+
+            # Filter: only trade markets with >1 week until resolution
+            end_date = market.get("end_date_iso", "")
+            if end_date:
+                try:
+                    resolution_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+                    hours_until = (resolution_dt - datetime.now(timezone.utc)).total_seconds() / 3600
+                    if hours_until < self.settings.ARB_MIN_HOURS_TO_RESOLUTION:
+                        continue
+                except Exception:
+                    pass
 
             tokens = market.get("tokens", [])
             if len(tokens) < 2:

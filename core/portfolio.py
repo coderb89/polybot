@@ -37,7 +37,23 @@ class Portfolio:
         self.settings = settings
         self.initial_capital = settings.INITIAL_CAPITAL
         self.db_path = settings.DB_PATH
+        self._wallet_balances = {"matic": 0.0, "usdc": 0.0, "error": None}
         self._init_db()
+
+    def set_wallet_balances(self, balances: dict):
+        """Store on-chain wallet balances from latest check."""
+        self._wallet_balances = balances
+
+    def get_wallet_balances(self) -> dict:
+        return self._wallet_balances
+
+    def get_open_positions(self) -> List[Dict]:
+        """Get all open trade positions."""
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM trades WHERE status='open' ORDER BY timestamp DESC"
+            ).fetchall()
+            return [dict(r) for r in rows]
 
     def _get_conn(self):
         conn = sqlite3.connect(self.db_path)
@@ -268,6 +284,11 @@ class Portfolio:
 
         dashboard_data = {
             "summary": summary,
+            "wallet": {
+                "matic": round(self._wallet_balances.get("matic", 0), 4),
+                "usdc": round(self._wallet_balances.get("usdc", 0), 2),
+                "address": self.settings.FUNDER_ADDRESS,
+            },
             "trades": trades,
             "pnl_series": pnl_series,
             "strategy_breakdown": strategy_breakdown,

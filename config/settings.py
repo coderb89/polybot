@@ -67,7 +67,8 @@ class Settings:
     ])
     WEATHER_MIN_EDGE: float = 0.15
     WEATHER_MIN_LIQUIDITY: float = 500.0
-    WEATHER_MAX_HOURS_OUT: int = 48
+    WEATHER_MAX_HOURS_OUT: int = 336  # 14 days max
+    WEATHER_MIN_HOURS_OUT: int = 168  # 7 days minimum (1 week+)
     WEATHER_SCAN_INTERVAL: int = 300
     WEATHER_MAX_BET_USD: float = 5.0
 
@@ -86,6 +87,7 @@ class Settings:
     ARB_MAX_POSITION_USD: float = 20.0
     ARB_POLY_FEE: float = 0.001
     ARB_KALSHI_FEE: float = 0.007
+    ARB_MIN_HOURS_TO_RESOLUTION: int = 168  # 7 days minimum
 
     # ─── Portfolio / Reporting ──────────────────────────────────────
     REPORT_INTERVAL_SECONDS: int = 3600
