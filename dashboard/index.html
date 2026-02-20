@@ -308,8 +308,11 @@ function renderDashboard(data) {
 
   // Wallet balances
   if (data.wallet) {
-    document.getElementById('wallet-usdc').textContent = '$' + (data.wallet.usdc || 0).toFixed(2);
-    document.getElementById('wallet-matic').textContent = (data.wallet.matic || 0).toFixed(4) + ' MATIC';
+    var polyCash = data.wallet.polymarket_cash || 0;
+    var onChainUsdc = data.wallet.usdc || 0;
+    var totalUsdc = polyCash + onChainUsdc;
+    document.getElementById('wallet-usdc').textContent = '$' + totalUsdc.toFixed(2);
+    document.getElementById('wallet-matic').textContent = 'Poly: $' + polyCash.toFixed(2) + ' | ' + (data.wallet.matic || 0).toFixed(4) + ' MATIC';
   }
 
   // Open positions table

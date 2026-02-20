@@ -33,23 +33,29 @@ POLYGON_RPC_URLS = [
     "https://1rpc.io/matic",
 ]
 
+# Polymarket Conditional Tokens Framework (CTF) Exchange contract on Polygon
+# Funds deposited to Polymarket live inside the CTF Exchange, not in the user's EOA.
+POLYMARKET_CTF_EXCHANGE = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E"
 
-async def check_wallet_balance(address: str) -> dict:
-    """Check MATIC and USDC balances on Polygon via public RPC (tries multiple providers)."""
-    balances = {"matic": 0.0, "usdc": 0.0, "error": None}
+# USDC contracts on Polygon
+USDC_NATIVE = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
+USDC_BRIDGED = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
+
+
+async def check_wallet_balance(address: str, clob_host: str = "https://clob.polymarket.com") -> dict:
+    """Check wallet balances: on-chain MATIC/USDC + Polymarket cash balance via CLOB API."""
+    balances = {"matic": 0.0, "usdc": 0.0, "polymarket_cash": 0.0, "error": None}
     if not address:
         balances["error"] = "No wallet address configured"
         return balances
 
-    # USDC contracts on Polygon
-    usdc_native = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"   # Native USDC
-    usdc_bridged = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"   # USDC.e (bridged)
     padded_addr = address.lower().replace("0x", "").zfill(64)
 
+    # ── 1. Check on-chain balances via Polygon RPC ──
     for rpc_url in POLYGON_RPC_URLS:
         try:
             async with httpx.AsyncClient(timeout=10) as client:
-                # 1. MATIC balance
+                # MATIC balance
                 resp = await client.post(rpc_url, json={
                     "jsonrpc": "2.0", "method": "eth_getBalance",
                     "params": [address, "latest"], "id": 1
@@ -58,36 +64,58 @@ async def check_wallet_balance(address: str) -> dict:
                 if "result" in data:
                     balances["matic"] = int(data["result"], 16) / 1e18
 
-                # 2. Native USDC balance
+                # Native USDC balance
                 resp2 = await client.post(rpc_url, json={
                     "jsonrpc": "2.0", "method": "eth_call",
-                    "params": [{"to": usdc_native, "data": f"0x70a08231{padded_addr}"}, "latest"],
+                    "params": [{"to": USDC_NATIVE, "data": f"0x70a08231{padded_addr}"}, "latest"],
                     "id": 2
                 })
                 data2 = resp2.json()
                 if "result" in data2 and data2["result"] not in ("0x", "0x0", ""):
                     balances["usdc"] = int(data2["result"], 16) / 1e6
 
-                # 3. Bridged USDC.e balance
+                # Bridged USDC.e balance
                 resp3 = await client.post(rpc_url, json={
                     "jsonrpc": "2.0", "method": "eth_call",
-                    "params": [{"to": usdc_bridged, "data": f"0x70a08231{padded_addr}"}, "latest"],
+                    "params": [{"to": USDC_BRIDGED, "data": f"0x70a08231{padded_addr}"}, "latest"],
                     "id": 3
                 })
                 data3 = resp3.json()
                 if "result" in data3 and data3["result"] not in ("0x", "0x0", ""):
                     balances["usdc"] += int(data3["result"], 16) / 1e6
 
-                logger.info(f"Wallet balance via {rpc_url.split('/')[2]}: "
+                logger.info(f"On-chain via {rpc_url.split('/')[2]}: "
                           f"{balances['matic']:.4f} MATIC | ${balances['usdc']:.2f} USDC")
-                return balances  # Success — stop trying other RPCs
+                break  # RPC success — stop trying others
 
         except Exception as e:
             logger.debug(f"RPC {rpc_url} failed: {e}")
             continue
 
-    balances["error"] = "All RPC providers failed"
-    logger.warning("Wallet balance check: all RPC providers failed")
+    # ── 2. Check Polymarket cash balance via Gamma API ──
+    # Polymarket holds USDC inside proxy wallets / CTF Exchange.
+    # The actual "cash" is visible via the Gamma portfolio API.
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                f"https://gamma-api.polymarket.com/balances",
+                params={"address": address},
+                timeout=10
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, dict):
+                    balances["polymarket_cash"] = float(data.get("cash", data.get("balance", 0)))
+                elif isinstance(data, list) and len(data) > 0:
+                    balances["polymarket_cash"] = float(data[0].get("cash", data[0].get("balance", 0)))
+                logger.info(f"Polymarket cash balance: ${balances['polymarket_cash']:.2f}")
+    except Exception as e:
+        logger.debug(f"Polymarket balance API failed: {e}")
+
+    # Total USDC = on-chain + Polymarket deposits
+    total = balances["usdc"] + balances["polymarket_cash"]
+    logger.info(f"Total available: ${total:.2f} (on-chain: ${balances['usdc']:.2f} + Polymarket: ${balances['polymarket_cash']:.2f})")
+
     return balances
 
 
@@ -125,14 +153,16 @@ class PolyBot:
         if balances["error"]:
             logger.warning(f"Wallet balance check: {balances['error']}")
         else:
-            logger.info(f"Wallet Balance: {balances['matic']:.4f} MATIC | ${balances['usdc']:.2f} USDC")
+            poly_cash = balances.get('polymarket_cash', 0)
+            on_chain = balances.get('usdc', 0)
+            logger.info(f"Wallet: Polymarket ${poly_cash:.2f} | On-chain ${on_chain:.2f} USDC | {balances['matic']:.4f} MATIC")
         self.portfolio.set_wallet_balances(balances)
 
         await self.alerter.send(
             f"PolyBot scan started\n"
             f"Mode: {'DRY RUN' if self.settings.DRY_RUN else 'LIVE'}\n"
             f"Portfolio: ${self.portfolio.get_portfolio_value():.2f}\n"
-            f"Wallet: {balances['matic']:.4f} MATIC | ${balances['usdc']:.2f} USDC"
+            f"Polymarket cash: ${balances.get('polymarket_cash', 0):.2f}"
         )
 
         # Check if risk manager needs daily reset
