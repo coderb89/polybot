@@ -39,6 +39,7 @@ jobs:
       - name: Run PolyBot (single cycle)
         env:
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          FUNDER_ADDRESS: ${{ secrets.FUNDER_ADDRESS }}
           DRY_RUN: ${{ secrets.DRY_RUN || 'true' }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

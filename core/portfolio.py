@@ -155,6 +155,11 @@ class Portfolio:
             return (wins / total * 100) if total > 0 else 0.0
 
     def get_portfolio_value(self) -> float:
+        """Get portfolio value — uses on-chain USDC if available, else initial_capital + pnl."""
+        usdc_balance = self._wallet_balances.get("usdc", 0)
+        if usdc_balance > 0:
+            # Real on-chain balance + value of open positions
+            return usdc_balance + self.get_deployed_capital()
         return self.initial_capital + self.get_total_pnl()
 
     def get_summary(self) -> str:
@@ -164,9 +169,12 @@ class Portfolio:
         portfolio_val = self.get_portfolio_value()
         win_rate = self.get_win_rate()
         pct_return = (total_pnl / self.initial_capital * 100) if self.initial_capital > 0 else 0
+        usdc = self._wallet_balances.get("usdc", 0)
+        matic = self._wallet_balances.get("matic", 0)
 
         return (
             f"Portfolio Value: ${portfolio_val:.2f}\n"
+            f"Wallet: ${usdc:.2f} USDC | {matic:.4f} MATIC\n"
             f"Total PnL: ${total_pnl:+.2f} ({pct_return:+.1f}%)\n"
             f"Today's PnL: ${daily_pnl:+.2f}\n"
             f"Deployed: ${deployed:.2f}\n"
