@@ -61,28 +61,22 @@ jobs:
       - name: Deploy dashboard to GitHub Pages
         if: success()
         run: |
+          # Save dashboard files before switching branches
+          mkdir -p /tmp/pages
+          cp dashboard/index.html /tmp/pages/index.html
+          cp dashboard/dashboard_data.json /tmp/pages/dashboard_data.json 2>/dev/null || true
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Create orphan gh-pages branch with dashboard files
+          # Create clean orphan branch
           git checkout --orphan gh-pages-deploy
-
-          # Keep only dashboard files
           git rm -rf . 2>/dev/null || true
-          mkdir -p dashboard
-          git checkout HEAD -- dashboard/index.html 2>/dev/null || true
 
-          # Copy the exported dashboard data
-          if [ -f dashboard/dashboard_data.json ]; then
-            git add dashboard/dashboard_data.json
-          fi
-          git add dashboard/index.html 2>/dev/null || true
+          # Copy saved dashboard files to root
+          cp /tmp/pages/index.html index.html
+          cp /tmp/pages/dashboard_data.json dashboard_data.json 2>/dev/null || true
 
-          # Move files to root for GitHub Pages
-          cp dashboard/index.html index.html 2>/dev/null || true
-          cp dashboard/dashboard_data.json dashboard_data.json 2>/dev/null || true
           git add index.html dashboard_data.json 2>/dev/null || true
-
           git commit -m "Update dashboard data" --allow-empty
-
           git push origin HEAD:gh-pages --force
