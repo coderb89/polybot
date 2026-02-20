@@ -79,19 +79,48 @@ class PolymarketClient:
         try:
             client = self._get_client()
             markets = []
-            next_cursor = None
-            while True:
-                resp = client.get_markets(next_cursor=next_cursor) if next_cursor else client.get_markets()
-                data = resp.get("data", [])
+            next_cursor = ""
+            page = 0
+            max_pages = 3  # Limit pages to avoid long runs in GH Actions
+
+            while page < max_pages:
+                page += 1
+                try:
+                    if next_cursor:
+                        resp = client.get_markets(next_cursor=next_cursor)
+                    else:
+                        resp = client.get_markets()
+                except Exception as e:
+                    logger.warning(f"get_markets page {page} failed: {e}")
+                    break
+
+                # Handle response — could be list or dict depending on client version
+                if isinstance(resp, list):
+                    data = resp
+                    next_cursor = ""
+                elif isinstance(resp, dict):
+                    data = resp.get("data", resp.get("markets", []))
+                    next_cursor = resp.get("next_cursor", "")
+                else:
+                    break
+
+                if not data:
+                    break
+
                 for m in data:
+                    if not isinstance(m, dict):
+                        continue
                     if active_only and not m.get("active", False):
                         continue
-                    if tag and tag.lower() not in m.get("tags", []):
+                    if tag and tag.lower() not in [t.lower() for t in m.get("tags", [])]:
                         continue
                     markets.append(m)
-                next_cursor = resp.get("next_cursor")
-                if not next_cursor:
+
+                # Stop if no valid cursor or cursor is "LTE0" / empty
+                if not next_cursor or next_cursor == "LTE0":
                     break
+
+            logger.info(f"Fetched {len(markets)} markets across {page} pages")
             return markets
         except Exception as e:
             logger.error(f"Failed to fetch markets: {e}")
@@ -152,7 +181,13 @@ class PolymarketClient:
                     timeout=10
                 )
                 resp.raise_for_status()
-                return resp.json().get("markets", [])
+                result = resp.json()
+                # Gamma API returns a list directly, not {"markets": [...]}
+                if isinstance(result, list):
+                    return result
+                elif isinstance(result, dict):
+                    return result.get("markets", result.get("data", []))
+                return []
         except Exception as e:
             logger.error(f"Market search failed: {e}")
             return []
