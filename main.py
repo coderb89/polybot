@@ -26,66 +26,68 @@ from utils.telegram_alerts import TelegramAlerter
 logger = setup_logger("polybot.main")
 
 
+POLYGON_RPC_URLS = [
+    "https://polygon-bor-rpc.publicnode.com",
+    "https://polygon.llamarpc.com",
+    "https://rpc.ankr.com/polygon",
+    "https://1rpc.io/matic",
+]
+
+
 async def check_wallet_balance(address: str) -> dict:
-    """Check MATIC and USDC balances on Polygon via public RPC."""
+    """Check MATIC and USDC balances on Polygon via public RPC (tries multiple providers)."""
     balances = {"matic": 0.0, "usdc": 0.0, "error": None}
     if not address:
         balances["error"] = "No wallet address configured"
         return balances
 
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            # Check MATIC balance via Polygon RPC
-            rpc_url = "https://polygon-mainnet.g.alchemy.com/v2/demo"
-            payload = {
-                "jsonrpc": "2.0",
-                "method": "eth_getBalance",
-                "params": [address, "latest"],
-                "id": 1
-            }
-            resp = await client.post(rpc_url, json=payload)
-            data = resp.json()
-            if "result" in data:
-                matic_wei = int(data["result"], 16)
-                balances["matic"] = matic_wei / 1e18
+    # USDC contracts on Polygon
+    usdc_native = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"   # Native USDC
+    usdc_bridged = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"   # USDC.e (bridged)
+    padded_addr = address.lower().replace("0x", "").zfill(64)
 
-            # Check USDC balance (Polygon USDC contract: 0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359)
-            usdc_contract = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
-            # balanceOf(address) selector = 0x70a08231 + padded address
-            padded_addr = address.lower().replace("0x", "").zfill(64)
-            call_data = f"0x70a08231{padded_addr}"
-            payload_usdc = {
-                "jsonrpc": "2.0",
-                "method": "eth_call",
-                "params": [{"to": usdc_contract, "data": call_data}, "latest"],
-                "id": 2
-            }
-            resp2 = await client.post(rpc_url, json=payload_usdc)
-            data2 = resp2.json()
-            if "result" in data2 and data2["result"] != "0x":
-                usdc_raw = int(data2["result"], 16)
-                balances["usdc"] = usdc_raw / 1e6  # USDC has 6 decimals
+    for rpc_url in POLYGON_RPC_URLS:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                # 1. MATIC balance
+                resp = await client.post(rpc_url, json={
+                    "jsonrpc": "2.0", "method": "eth_getBalance",
+                    "params": [address, "latest"], "id": 1
+                })
+                data = resp.json()
+                if "result" in data:
+                    balances["matic"] = int(data["result"], 16) / 1e18
 
-            # Also check USDC.e (bridged USDC: 0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174)
-            usdc_e_contract = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
-            padded_addr_e = address.lower().replace("0x", "").zfill(64)
-            call_data_e = f"0x70a08231{padded_addr_e}"
-            payload_usdc_e = {
-                "jsonrpc": "2.0",
-                "method": "eth_call",
-                "params": [{"to": usdc_e_contract, "data": call_data_e}, "latest"],
-                "id": 3
-            }
-            resp3 = await client.post(rpc_url, json=payload_usdc_e)
-            data3 = resp3.json()
-            if "result" in data3 and data3["result"] != "0x":
-                usdc_e_raw = int(data3["result"], 16)
-                balances["usdc"] += usdc_e_raw / 1e6  # Add bridged USDC
+                # 2. Native USDC balance
+                resp2 = await client.post(rpc_url, json={
+                    "jsonrpc": "2.0", "method": "eth_call",
+                    "params": [{"to": usdc_native, "data": f"0x70a08231{padded_addr}"}, "latest"],
+                    "id": 2
+                })
+                data2 = resp2.json()
+                if "result" in data2 and data2["result"] not in ("0x", "0x0", ""):
+                    balances["usdc"] = int(data2["result"], 16) / 1e6
 
-    except Exception as e:
-        balances["error"] = str(e)
-        logger.warning(f"Wallet balance check failed: {e}")
+                # 3. Bridged USDC.e balance
+                resp3 = await client.post(rpc_url, json={
+                    "jsonrpc": "2.0", "method": "eth_call",
+                    "params": [{"to": usdc_bridged, "data": f"0x70a08231{padded_addr}"}, "latest"],
+                    "id": 3
+                })
+                data3 = resp3.json()
+                if "result" in data3 and data3["result"] not in ("0x", "0x0", ""):
+                    balances["usdc"] += int(data3["result"], 16) / 1e6
 
+                logger.info(f"Wallet balance via {rpc_url.split('/')[2]}: "
+                          f"{balances['matic']:.4f} MATIC | ${balances['usdc']:.2f} USDC")
+                return balances  # Success — stop trying other RPCs
+
+        except Exception as e:
+            logger.debug(f"RPC {rpc_url} failed: {e}")
+            continue
+
+    balances["error"] = "All RPC providers failed"
+    logger.warning("Wallet balance check: all RPC providers failed")
     return balances
 
 
