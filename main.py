@@ -20,6 +20,7 @@ from core.risk_manager import RiskManager
 from strategies.weather_arb import WeatherArbStrategy
 from strategies.market_maker import MarketMakerStrategy
 from strategies.cross_platform_arb import CrossPlatformArbStrategy
+from strategies.general_scanner import GeneralScannerStrategy
 from utils.logger import setup_logger
 from utils.telegram_alerts import TelegramAlerter
 
@@ -134,6 +135,8 @@ class PolyBot:
             self.strategies.append(MarketMakerStrategy(self.settings, self.portfolio, self.risk_manager))
         if self.settings.ENABLE_CROSS_PLATFORM_ARB:
             self.strategies.append(CrossPlatformArbStrategy(self.settings, self.portfolio, self.risk_manager))
+        if self.settings.ENABLE_GENERAL_SCANNER:
+            self.strategies.append(GeneralScannerStrategy(self.settings, self.portfolio, self.risk_manager))
 
         logger.info(f"PolyBot initialized with {len(self.strategies)} strategies")
         logger.info(f"Mode: {'DRY RUN' if self.settings.DRY_RUN else 'LIVE TRADING'}")

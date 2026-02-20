@@ -59,6 +59,7 @@
   .badge-weather { background: #2d3748; color: #63b3ed; }
   .badge-mm { background: #2d3748; color: #fbd38d; }
   .badge-arb { background: #2d3748; color: #9f7aea; }
+  .badge-scanner { background: #2d3748; color: #48bb78; }
   .badge-dry { background: #1a2035; color: #718096; }
 
   .pnl-pos { color: #48bb78; }
@@ -104,9 +105,6 @@
         <div class="stat-value neutral" id="deployed">--</div></div>
       <div class="stat-card"><div class="stat-label">Return %</div>
         <div class="stat-value" id="pct-return-card">--</div></div>
-      <div class="stat-card"><div class="stat-label">Wallet USDC</div>
-        <div class="stat-value neutral" id="wallet-usdc">--</div>
-        <div class="stat-sub" id="wallet-matic">--</div></div>
     </div>
 
     <div class="charts-row">
@@ -168,6 +166,7 @@ function strategyBadge(s) {
     'weather_arb': ['badge-weather', 'Weather'],
     'market_maker': ['badge-mm', 'MM'],
     'cross_platform_arb': ['badge-arb', 'Arb'],
+    'general_scanner': ['badge-scanner', 'Scanner'],
   };
   var entry = map[s] || ['', s];
   return '<span class="badge ' + entry[0] + '">' + entry[1] + '</span>';
@@ -178,6 +177,7 @@ function strategyLabel(s) {
     'weather_arb': 'Weather',
     'market_maker': 'MM',
     'cross_platform_arb': 'Arb',
+    'general_scanner': 'Scanner',
   };
   return map[s] || s;
 }
@@ -304,15 +304,6 @@ function renderDashboard(data) {
         '<td>' + pnlTxt + '</td>' +
         '</tr>';
     }).join('');
-  }
-
-  // Wallet balances
-  if (data.wallet) {
-    var polyCash = data.wallet.polymarket_cash || 0;
-    var onChainUsdc = data.wallet.usdc || 0;
-    var totalUsdc = polyCash + onChainUsdc;
-    document.getElementById('wallet-usdc').textContent = '$' + totalUsdc.toFixed(2);
-    document.getElementById('wallet-matic').textContent = 'Poly: $' + polyCash.toFixed(2) + ' | ' + (data.wallet.matic || 0).toFixed(4) + ' MATIC';
   }
 
   // Open positions table
