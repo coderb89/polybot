@@ -49,8 +49,11 @@ class GeneralScannerStrategy:
 
         opportunities = []
         analyzed = 0
+        skipped_no_tokens = 0
+        skipped_no_book = 0
+        skipped_low_liq = 0
 
-        for market in markets[:80]:  # Analyze top 80 markets
+        for market in markets[:100]:  # Analyze top 100 markets by volume
             condition_id = market.get("condition_id", "")
 
             # Skip recently traded markets (1 hour cooldown)
@@ -61,25 +64,28 @@ class GeneralScannerStrategy:
             # Must have YES and NO tokens
             tokens = market.get("tokens", [])
             if len(tokens) < 2:
+                skipped_no_tokens += 1
                 continue
 
             yes_token = next((t for t in tokens if t.get("outcome", "").upper() == "YES"), None)
             no_token = next((t for t in tokens if t.get("outcome", "").upper() == "NO"), None)
             if not yes_token or not no_token:
+                skipped_no_tokens += 1
                 continue
 
             yes_id = yes_token.get("token_id")
             no_id = no_token.get("token_id")
             if not yes_id or not no_id:
+                skipped_no_tokens += 1
                 continue
 
-            # Check resolution time — minimum 24 hours
+            # Check resolution time — minimum 12 hours
             end_date = market.get("end_date_iso", "")
             if end_date:
                 try:
                     resolution_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
                     hours_until = (resolution_dt - datetime.now(timezone.utc)).total_seconds() / 3600
-                    if hours_until < 24:
+                    if hours_until < 12:
                         continue
                 except Exception:
                     pass
@@ -88,15 +94,18 @@ class GeneralScannerStrategy:
             analyzed += 1
             yes_book = await self.poly_client.get_order_book(yes_id)
             if not yes_book:
+                skipped_no_book += 1
                 continue
 
             no_book = await self.poly_client.get_order_book(no_id)
             if not no_book:
+                skipped_no_book += 1
                 continue
 
-            # Minimum liquidity check ($50)
+            # Minimum liquidity check ($25)
             min_liquidity = min(yes_book.liquidity_usd, no_book.liquidity_usd)
-            if min_liquidity < 50:
+            if min_liquidity < 25:
+                skipped_low_liq += 1
                 continue
 
             yes_mid = yes_book.mid_price
@@ -104,9 +113,9 @@ class GeneralScannerStrategy:
             total = yes_mid + no_mid
 
             # ── Opportunity Type 1: Arbitrage (YES + NO < $1.00) ──
-            if total < 0.98:
+            if total < 0.99:
                 arb_edge = 1.0 - total - 0.004  # Subtract ~0.4% fees
-                if arb_edge > 0.005:  # > 0.5% edge
+                if arb_edge > 0.003:  # > 0.3% edge
                     opportunities.append({
                         "type": "arb",
                         "condition_id": condition_id,
@@ -122,14 +131,13 @@ class GeneralScannerStrategy:
                     continue
 
             # ── Opportunity Type 2: Value bet (strong lean on one side) ──
-            # If YES is cheap (< 0.35) with decent spread, buy YES
-            # If NO is cheap (< 0.35) with decent spread, buy NO
+            # Buy the cheap side when one outcome is priced low with tight spread
             spread = yes_book.spread
 
-            if yes_mid < 0.35 and spread < 0.08 and min_liquidity > 100:
+            if yes_mid < 0.40 and spread < 0.10 and min_liquidity > 50:
                 # Cheap YES — potential value
-                edge = 0.35 - yes_mid  # Implied edge to fair value
-                if edge > 0.03:
+                edge = 0.40 - yes_mid  # Implied edge to fair value
+                if edge > 0.02:
                     opportunities.append({
                         "type": "value",
                         "condition_id": condition_id,
@@ -142,9 +150,9 @@ class GeneralScannerStrategy:
                         "liquidity": min_liquidity,
                         "side": "BUY_YES",
                     })
-            elif no_mid < 0.35 and spread < 0.08 and min_liquidity > 100:
-                edge = 0.35 - no_mid
-                if edge > 0.03:
+            elif no_mid < 0.40 and spread < 0.10 and min_liquidity > 50:
+                edge = 0.40 - no_mid
+                if edge > 0.02:
                     opportunities.append({
                         "type": "value",
                         "condition_id": condition_id,
@@ -160,11 +168,15 @@ class GeneralScannerStrategy:
 
             # Rate limit: don't hammer the API
             if analyzed % 10 == 0:
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.3)
 
+        logger.info(f"GeneralScanner stats: analyzed={analyzed}, no_tokens={skipped_no_tokens}, "
+                   f"no_book={skipped_no_book}, low_liq={skipped_low_liq}")
         opportunities.sort(key=lambda x: x["edge"], reverse=True)
         if opportunities:
             logger.info(f"GeneralScanner: {len(opportunities)} opportunities, best edge: {opportunities[0]['edge']:.2%}")
+        else:
+            logger.info("GeneralScanner: no opportunities found this cycle")
         return opportunities
 
     async def _execute_trade(self, opp: Dict) -> bool:

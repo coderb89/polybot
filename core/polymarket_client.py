@@ -1,9 +1,13 @@
 """
 Polymarket CLOB Client Wrapper
 Handles all API calls to Polymarket's Central Limit Order Book.
+
+Uses Gamma API for market discovery (reliable active market filtering)
+and CLOB API for order book queries and trade execution.
 """
 
 import asyncio
+import json
 import logging
 import time
 from typing import Optional, Dict, List
@@ -36,6 +40,62 @@ class TradeResult:
     filled_price: Optional[float]
     filled_size: Optional[float]
     error: Optional[str] = None
+
+
+def _normalize_gamma_market(m: Dict) -> Dict:
+    """Normalize Gamma API field names to match CLOB API format.
+
+    Gamma uses camelCase (conditionId, clobTokenIds, endDateIso)
+    while CLOB uses snake_case (condition_id, tokens, end_date_iso).
+    Strategies expect the CLOB format.
+    """
+    normalized = dict(m)
+
+    # condition_id
+    if "condition_id" not in normalized and "conditionId" in normalized:
+        normalized["condition_id"] = normalized["conditionId"]
+
+    # end_date_iso
+    if "end_date_iso" not in normalized and "endDateIso" in normalized:
+        normalized["end_date_iso"] = normalized["endDateIso"]
+    elif "end_date_iso" not in normalized and "endDate" in normalized:
+        normalized["end_date_iso"] = normalized["endDate"]
+
+    # tokens — Gamma uses clobTokenIds (JSON string) + outcomes (JSON string)
+    if "tokens" not in normalized or not isinstance(normalized.get("tokens"), list):
+        clob_ids = normalized.get("clobTokenIds", "[]")
+        outcomes_raw = normalized.get("outcomes", '["Yes", "No"]')
+
+        try:
+            if isinstance(clob_ids, str):
+                token_ids = json.loads(clob_ids)
+            else:
+                token_ids = clob_ids
+        except (json.JSONDecodeError, TypeError):
+            token_ids = []
+
+        try:
+            if isinstance(outcomes_raw, str):
+                outcomes = json.loads(outcomes_raw)
+            else:
+                outcomes = outcomes_raw
+        except (json.JSONDecodeError, TypeError):
+            outcomes = ["Yes", "No"]
+
+        tokens = []
+        for i, tid in enumerate(token_ids):
+            outcome = outcomes[i] if i < len(outcomes) else ("Yes" if i == 0 else "No")
+            tokens.append({
+                "token_id": str(tid),
+                "outcome": outcome,
+            })
+        normalized["tokens"] = tokens
+
+    # active flag
+    if "active" not in normalized:
+        normalized["active"] = True
+
+    return normalized
 
 
 class PolymarketClient:
@@ -81,58 +141,73 @@ class PolymarketClient:
         self._last_request_time = time.monotonic()
 
     async def get_markets(self, tag: Optional[str] = None, active_only: bool = True) -> List[Dict]:
-        """Fetch active markets, optionally filtered by tag."""
-        await self._rate_limit()
-        try:
-            client = self._get_client()
-            markets = []
-            next_cursor = ""
-            page = 0
-            max_pages = 3  # Limit pages to avoid long runs in GH Actions
+        """Fetch active markets from the Gamma API.
 
-            while page < max_pages:
-                page += 1
+        Uses Gamma API because it supports proper filtering (closed=false,
+        active=true) and returns markets sorted by volume. The CLOB API
+        returns old/closed markets first and has unreliable pagination.
+        """
+        try:
+            markets = []
+            offset = 0
+            limit = 100
+            max_pages = 5  # Up to 500 markets
+
+            for page in range(max_pages):
                 try:
-                    if next_cursor:
-                        resp = client.get_markets(next_cursor=next_cursor)
+                    params = {
+                        "limit": limit,
+                        "offset": offset,
+                        "active": "true",
+                        "closed": "false",
+                        "order": "volume24hr",
+                        "ascending": "false",
+                    }
+                    if tag:
+                        params["tag"] = tag
+
+                    async with httpx.AsyncClient(timeout=15) as http:
+                        resp = await http.get(
+                            f"{self.settings.GAMMA_HOST}/markets",
+                            params=params,
+                        )
+                        resp.raise_for_status()
+                        result = resp.json()
+
+                    if isinstance(result, list):
+                        data = result
+                    elif isinstance(result, dict):
+                        data = result.get("data", result.get("markets", []))
                     else:
-                        resp = client.get_markets()
-                    logger.debug(f"get_markets page {page}: type={type(resp).__name__}, "
-                               f"len={len(resp) if hasattr(resp, '__len__') else 'N/A'}")
+                        logger.warning(f"get_markets page {page}: unexpected type {type(result)}")
+                        break
+
+                    if not data:
+                        break
+
+                    logger.debug(f"get_markets page {page}: {len(data)} markets fetched")
+
+                    for m in data:
+                        if not isinstance(m, dict):
+                            continue
+                        # Normalize Gamma field names → CLOB format
+                        normalized = _normalize_gamma_market(m)
+
+                        if active_only and normalized.get("closed", False):
+                            continue
+                        if active_only and not normalized.get("active", False):
+                            continue
+                        markets.append(normalized)
+
+                    offset += limit
+                    if len(data) < limit:
+                        break  # No more pages
+
                 except Exception as e:
                     logger.warning(f"get_markets page {page} failed: {e}")
                     break
 
-                # Handle response — could be list or dict depending on client version
-                if isinstance(resp, list):
-                    data = resp
-                    next_cursor = ""
-                    logger.debug(f"  Page {page}: list with {len(data)} items")
-                elif isinstance(resp, dict):
-                    data = resp.get("data", resp.get("markets", []))
-                    next_cursor = resp.get("next_cursor", "")
-                    logger.debug(f"  Page {page}: dict with {len(data)} items, cursor='{next_cursor[:20] if next_cursor else ''}'")
-                else:
-                    logger.warning(f"  Page {page}: unexpected type {type(resp)}")
-                    break
-
-                if not data:
-                    break
-
-                for m in data:
-                    if not isinstance(m, dict):
-                        continue
-                    if active_only and not m.get("active", False):
-                        continue
-                    if tag and tag.lower() not in [t.lower() for t in m.get("tags", [])]:
-                        continue
-                    markets.append(m)
-
-                # Stop if no valid cursor or cursor is "LTE0" / empty
-                if not next_cursor or next_cursor == "LTE0":
-                    break
-
-            logger.info(f"Fetched {len(markets)} markets across {page} pages")
+            logger.info(f"Fetched {len(markets)} active markets from Gamma API")
             return markets
         except Exception as e:
             logger.error(f"Failed to fetch markets: {e}")
@@ -165,7 +240,7 @@ class PolymarketClient:
                 liquidity_usd=liquidity
             )
         except Exception as e:
-            logger.debug(f"Order book fetch failed for {token_id}: {e}")
+            logger.debug(f"Order book fetch failed for {token_id[:16]}...: {e}")
             return None
 
     async def get_market_price(self, token_id: str, side: str = "MID") -> Optional[float]:
@@ -180,28 +255,37 @@ class PolymarketClient:
                 result = client.get_price(token_id, side=side)
                 return float(result.get("price", 0))
         except Exception as e:
-            logger.debug(f"Price fetch failed for {token_id}: {e}")
+            logger.debug(f"Price fetch failed for {token_id[:16]}...: {e}")
             return None
 
     async def search_markets(self, query: str) -> List[Dict]:
         """Search markets by keyword (uses Gamma API for text search)."""
         try:
-            async with httpx.AsyncClient() as http:
+            async with httpx.AsyncClient(timeout=15) as http:
                 resp = await http.get(
                     f"{self.settings.GAMMA_HOST}/markets",
-                    params={"search": query, "active": "true", "limit": 50},
-                    timeout=10
+                    params={
+                        "search": query,
+                        "active": "true",
+                        "closed": "false",
+                        "limit": 50,
+                    },
                 )
                 resp.raise_for_status()
                 result = resp.json()
+
                 # Gamma API returns a list directly, not {"markets": [...]}
                 if isinstance(result, list):
-                    return result
+                    raw_markets = result
                 elif isinstance(result, dict):
-                    return result.get("markets", result.get("data", []))
-                return []
+                    raw_markets = result.get("markets", result.get("data", []))
+                else:
+                    return []
+
+                # Normalize all field names
+                return [_normalize_gamma_market(m) for m in raw_markets if isinstance(m, dict)]
         except Exception as e:
-            logger.error(f"Market search failed: {e}")
+            logger.error(f"Market search failed for '{query}': {e}")
             return []
 
     async def place_limit_order(
@@ -209,7 +293,7 @@ class PolymarketClient:
     ) -> TradeResult:
         """Place a limit order on the CLOB."""
         side_const = BUY if side.upper() == "BUY" else SELL
-        logger.info(f"{'[DRY RUN] ' if dry_run else ''}LIMIT {side} {size:.2f} @ ${price:.4f} token={token_id[:8]}...")
+        logger.info(f"{'[DRY RUN] ' if dry_run else ''}LIMIT {side} {size:.2f} @ ${price:.4f} token={token_id[:16]}...")
 
         if dry_run:
             return TradeResult(success=True, order_id="dry_run_" + str(int(time.time())),
@@ -242,8 +326,8 @@ class PolymarketClient:
     async def place_market_order(
         self, token_id: str, amount_usd: float, side: str, dry_run: bool = True
     ) -> TradeResult:
-        """Place a market order."""
-        logger.info(f"{'[DRY RUN] ' if dry_run else ''}MARKET {side} ${amount_usd:.2f} token={token_id[:8]}...")
+        """Place a market order (uses FAK for best fill)."""
+        logger.info(f"{'[DRY RUN] ' if dry_run else ''}MARKET {side} ${amount_usd:.2f} token={token_id[:16]}...")
 
         if dry_run:
             return TradeResult(success=True, order_id="dry_run_mkt_" + str(int(time.time())),
@@ -255,7 +339,8 @@ class PolymarketClient:
             side_const = BUY if side.upper() == "BUY" else SELL
             order_args = MarketOrderArgs(token_id=token_id, amount=amount_usd, side=side_const)
             signed = client.create_market_order(order_args)
-            resp = client.post_order(signed, OrderType.FOK)
+            # Use FAK (Fill and Kill) — matches user's Polymarket settings
+            resp = client.post_order(signed, OrderType.FAK)
 
             if resp.get("success"):
                 return TradeResult(success=True, order_id=resp.get("orderID"), filled_price=None, filled_size=amount_usd)

@@ -184,7 +184,7 @@ class CrossPlatformArbStrategy:
                 continue
 
             min_liquidity = min(yes_book.liquidity_usd, no_book.liquidity_usd)
-            if min_liquidity < 200:
+            if min_liquidity < 50:
                 continue
 
             opportunities.append({
