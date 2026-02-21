@@ -209,12 +209,14 @@ function renderDashboard(data) {
   // Health status
   var dot = document.getElementById('status-dot');
   var txt = document.getElementById('status-text');
+  var isDry = (data.trades && data.trades.length > 0 && data.trades[0].dry_run);
+  var modeLabel = isDry ? ' [PAPER TRADING]' : ' [LIVE]';
   if (data.health && data.health.bot_active) {
     dot.className = 'dot live';
-    txt.textContent = 'Bot Active';
+    txt.textContent = 'Bot Active' + modeLabel;
   } else if (data.health && data.health.last_trade) {
     dot.className = 'dot offline';
-    txt.textContent = 'Last: ' + data.health.last_trade.slice(0, 16);
+    txt.textContent = 'Last: ' + data.health.last_trade.slice(0, 16) + modeLabel;
   } else {
     dot.className = 'dot offline';
     txt.textContent = 'No activity yet';
@@ -335,14 +337,27 @@ function renderDashboard(data) {
   }
 }
 
-// Load data from JSON file
-fetch('dashboard_data.json')
-  .then(function(r) { return r.json(); })
+// Load data from JSON file (cache-busted to always get fresh data)
+var cacheBust = '?t=' + Date.now();
+fetch('dashboard_data.json' + cacheBust)
+  .then(function(r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  })
   .then(function(data) { renderDashboard(data); })
   .catch(function(err) {
     document.getElementById('loading').textContent = 'No dashboard data yet. The bot needs to run at least once.';
     console.error('Failed to load dashboard data:', err);
   });
+
+// Auto-refresh every 30 seconds
+setInterval(function() {
+  var cb = '?t=' + Date.now();
+  fetch('dashboard_data.json' + cb)
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(data) { if (data) renderDashboard(data); })
+    .catch(function() {});
+}, 30000);
 </script>
 </body>
 </html>
