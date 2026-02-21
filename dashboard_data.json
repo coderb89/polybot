@@ -1,0 +1,176 @@
+{
+  "summary": {
+    "portfolio_value": 23.18,
+    "total_pnl": 0.02,
+    "daily_pnl": 0.02,
+    "pct_return": 0.09,
+    "deployed_capital": 5.79,
+    "win_rate": 100.0,
+    "total_trades": 4,
+    "initial_capital": 23.16
+  },
+  "wallet": {
+    "matic": 0.0,
+    "usdc": 0.0,
+    "polymarket_cash": 0.0,
+    "address": "0xD65EeE836ca7bC1a80F87bF4bF48eA4018380BF2"
+  },
+  "trades": [
+    {
+      "id": 4,
+      "timestamp": "2026-02-21T17:56:38.883830",
+      "strategy": "general_scanner",
+      "market_id": "0x0c4cd2055d6ea89354ffddc55d6dbcef9355748112ea952fc925f3db6a5c457f",
+      "market_question": "Will Argentina win the 2026 FIFA World Cup?",
+      "side": "BUY_YES",
+      "token_id": "18812649149814341758733697580460697418474693998558159483117100240528657629879",
+      "price": 0.1135,
+      "size_usd": 1.159063469387755,
+      "edge_pct": 0.3365,
+      "dry_run": 1,
+      "order_id": "dry_run_mkt_1771696598",
+      "pnl": null,
+      "status": "open"
+    },
+    {
+      "id": 3,
+      "timestamp": "2026-02-21T17:56:38.881644",
+      "strategy": "general_scanner",
+      "market_id": "0x61b66d02793b4a68ab0cc25be60d65f517fe18c7d654041281bb130341244fcc",
+      "market_question": "Will Trump nominate Kevin Warsh as the next Fed chair?",
+      "side": "BUY_NO",
+      "token_id": "18289842382539867639079362738467334752951741961393928566628307174343542320349",
+      "price": 0.0565,
+      "size_usd": 1.159063469387755,
+      "edge_pct": 0.3935,
+      "dry_run": 1,
+      "order_id": "dry_run_mkt_1771696598",
+      "pnl": null,
+      "status": "open"
+    },
+    {
+      "id": 2,
+      "timestamp": "2026-02-21T17:56:38.877538",
+      "strategy": "general_scanner",
+      "market_id": "0xe5535e41e78edb730150ac1a497fbef7cef536022168771cb51a6b702705ebb1",
+      "market_question": "US strikes Iran by February 24, 2026?",
+      "side": "BUY_YES",
+      "token_id": "111977898551602011660195806458348931912849013753262334814342962907278475615442",
+      "price": 0.055,
+      "size_usd": 1.159063469387755,
+      "edge_pct": 0.395,
+      "dry_run": 1,
+      "order_id": "dry_run_mkt_1771696598",
+      "pnl": null,
+      "status": "open"
+    },
+    {
+      "id": 1,
+      "timestamp": "2026-02-21T17:56:22.280327",
+      "strategy": "cross_platform_arb",
+      "market_id": "0xf01fed5e2aea775176ef8dbb697ab6b370a568686d8990489dff545bda37ffdf",
+      "market_question": "Will Real Madrid CF win on 2026-02-21?",
+      "side": "BOTH",
+      "token_id": "77393343328523895032139432642222481457206204645402383956269366454697353379541|97035229663355642072626815718224786389043373373765434346206573135969786996606",
+      "price": 0.98,
+      "size_usd": 2.3160000000000003,
+      "edge_pct": 0.018367346938775526,
+      "dry_run": 1,
+      "order_id": "dry_run_mkt_1771696582|dry_run_mkt_1771696582",
+      "pnl": 0.02126938775510206,
+      "status": "open"
+    }
+  ],
+  "pnl_series": [
+    {
+      "day": "2026-02-21",
+      "daily_pnl": 0.0213,
+      "portfolio_value": 23.18,
+      "trade_count": 1
+    }
+  ],
+  "strategy_breakdown": [
+    {
+      "strategy": "cross_platform_arb",
+      "total_trades": 1,
+      "total_pnl": 0.02126938775510206,
+      "avg_pnl": 0.02126938775510206,
+      "best_trade": 0.02126938775510206,
+      "worst_trade": 0.02126938775510206,
+      "wins": 1,
+      "total_volume": 2.3160000000000003
+    }
+  ],
+  "open_positions": [
+    {
+      "id": 4,
+      "timestamp": "2026-02-21T17:56:38.883830",
+      "strategy": "general_scanner",
+      "market_id": "0x0c4cd2055d6ea89354ffddc55d6dbcef9355748112ea952fc925f3db6a5c457f",
+      "market_question": "Will Argentina win the 2026 FIFA World Cup?",
+      "side": "BUY_YES",
+      "token_id": "18812649149814341758733697580460697418474693998558159483117100240528657629879",
+      "price": 0.1135,
+      "size_usd": 1.159063469387755,
+      "edge_pct": 0.3365,
+      "dry_run": 1,
+      "order_id": "dry_run_mkt_1771696598",
+      "pnl": null,
+      "status": "open"
+    },
+    {
+      "id": 3,
+      "timestamp": "2026-02-21T17:56:38.881644",
+      "strategy": "general_scanner",
+      "market_id": "0x61b66d02793b4a68ab0cc25be60d65f517fe18c7d654041281bb130341244fcc",
+      "market_question": "Will Trump nominate Kevin Warsh as the next Fed chair?",
+      "side": "BUY_NO",
+      "token_id": "18289842382539867639079362738467334752951741961393928566628307174343542320349",
+      "price": 0.0565,
+      "size_usd": 1.159063469387755,
+      "edge_pct": 0.3935,
+      "dry_run": 1,
+      "order_id": "dry_run_mkt_1771696598",
+      "pnl": null,
+      "status": "open"
+    },
+    {
+      "id": 2,
+      "timestamp": "2026-02-21T17:56:38.877538",
+      "strategy": "general_scanner",
+      "market_id": "0xe5535e41e78edb730150ac1a497fbef7cef536022168771cb51a6b702705ebb1",
+      "market_question": "US strikes Iran by February 24, 2026?",
+      "side": "BUY_YES",
+      "token_id": "111977898551602011660195806458348931912849013753262334814342962907278475615442",
+      "price": 0.055,
+      "size_usd": 1.159063469387755,
+      "edge_pct": 0.395,
+      "dry_run": 1,
+      "order_id": "dry_run_mkt_1771696598",
+      "pnl": null,
+      "status": "open"
+    },
+    {
+      "id": 1,
+      "timestamp": "2026-02-21T17:56:22.280327",
+      "strategy": "cross_platform_arb",
+      "market_id": "0xf01fed5e2aea775176ef8dbb697ab6b370a568686d8990489dff545bda37ffdf",
+      "market_question": "Will Real Madrid CF win on 2026-02-21?",
+      "side": "BOTH",
+      "token_id": "77393343328523895032139432642222481457206204645402383956269366454697353379541|97035229663355642072626815718224786389043373373765434346206573135969786996606",
+      "price": 0.98,
+      "size_usd": 2.3160000000000003,
+      "edge_pct": 0.018367346938775526,
+      "dry_run": 1,
+      "order_id": "dry_run_mkt_1771696582|dry_run_mkt_1771696582",
+      "pnl": 0.02126938775510206,
+      "status": "open"
+    }
+  ],
+  "health": {
+    "bot_active": true,
+    "last_trade": "2026-02-21T17:56:38.883830",
+    "timestamp": "2026-02-21T17:56:38.889951"
+  },
+  "exported_at": "2026-02-21T17:56:38.889954"
+}
