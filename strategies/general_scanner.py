@@ -131,13 +131,15 @@ class GeneralScannerStrategy:
                     continue
 
             # ── Opportunity Type 2: Value bet (strong lean on one side) ──
-            # Buy the cheap side when one outcome is priced low with tight spread
+            # Buy the cheap side when one outcome is priced between 5¢-45¢
+            # with tight spread. Avoid penny stocks (< 5¢) as they're almost
+            # always losers despite seeming "high edge".
             spread = yes_book.spread
 
-            if yes_mid < 0.40 and spread < 0.10 and min_liquidity > 50:
+            if 0.05 <= yes_mid <= 0.45 and spread < 0.10 and min_liquidity > 50:
                 # Cheap YES — potential value
-                edge = 0.40 - yes_mid  # Implied edge to fair value
-                if edge > 0.02:
+                edge = 0.45 - yes_mid  # Implied edge to fair value
+                if edge > 0.03:
                     opportunities.append({
                         "type": "value",
                         "condition_id": condition_id,
@@ -150,9 +152,9 @@ class GeneralScannerStrategy:
                         "liquidity": min_liquidity,
                         "side": "BUY_YES",
                     })
-            elif no_mid < 0.40 and spread < 0.10 and min_liquidity > 50:
-                edge = 0.40 - no_mid
-                if edge > 0.02:
+            elif 0.05 <= no_mid <= 0.45 and spread < 0.10 and min_liquidity > 50:
+                edge = 0.45 - no_mid
+                if edge > 0.03:
                     opportunities.append({
                         "type": "value",
                         "condition_id": condition_id,
