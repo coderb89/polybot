@@ -18,10 +18,49 @@
   .dot { width: 10px; height: 10px; border-radius: 50%; animation: pulse 2s infinite; }
   .dot.live { background: #48bb78; }
   .dot.offline { background: #fc8181; }
+  .dot.halted { background: #fc8181; animation: flash 0.8s infinite; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  @keyframes flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
 
   .container { max-width: 1400px; margin: 0 auto; padding: 24px 32px; }
 
+  /* ─── Control Panel ───────────────────────────────────── */
+  .control-panel { background: linear-gradient(135deg, #1a1f36 0%, #1e2a4a 100%);
+    border: 1px solid #2d3748; border-radius: 12px; padding: 20px; margin-bottom: 24px; display: none; }
+  .control-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .control-header h2 { font-size: 1rem; text-transform: uppercase; letter-spacing: 0.05em; color: #a0aec0; }
+  .connection-status { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; }
+  .conn-label { color: #a0aec0; }
+  .control-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .control-card { background: #0d1117; border: 1px solid #2d3748; border-radius: 8px;
+    padding: 16px; text-align: center; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; }
+  .control-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;
+    color: #718096; margin-bottom: 12px; }
+  .mode-toggle { display: inline-flex; background: #1a1f36; border-radius: 8px;
+    overflow: hidden; border: 1px solid #2d3748; }
+  .mode-option { padding: 10px 24px; font-size: 0.85rem; font-weight: 700; cursor: pointer;
+    transition: all 0.2s; color: #4a5568; user-select: none; }
+  .mode-option:hover { color: #a0aec0; }
+  .mode-option.active-dry { background: #44337a; color: #fbd38d; }
+  .mode-option.active-live { background: #276749; color: #48bb78; }
+  .trading-status { font-size: 1.4rem; font-weight: 700; margin: 8px 0; }
+  .trading-status.active { color: #48bb78; }
+  .trading-status.halted { color: #fc8181; }
+  .btn-emergency { background: linear-gradient(135deg, #c53030, #9b2c2c); color: #fff;
+    border: 2px solid #fc8181; border-radius: 8px; padding: 12px 24px; font-size: 0.9rem;
+    font-weight: 700; cursor: pointer; width: 100%; transition: all 0.2s;
+    text-transform: uppercase; letter-spacing: 0.1em; }
+  .btn-emergency:hover { background: linear-gradient(135deg, #9b2c2c, #742a2a);
+    border-color: #fff; transform: scale(1.02); }
+  .btn-resume { background: linear-gradient(135deg, #276749, #22543d); color: #fff;
+    border: 2px solid #48bb78; border-radius: 8px; padding: 12px 24px; font-size: 0.9rem;
+    font-weight: 700; cursor: pointer; width: 100%; transition: all 0.2s; text-transform: uppercase; }
+  .btn-resume:hover { background: linear-gradient(135deg, #22543d, #1a4731);
+    transform: scale(1.02); }
+  .control-sub { font-size: 0.75rem; color: #4a5568; margin-top: 8px; }
+
+  /* ─── Stats Grid ──────────────────────────────────────── */
   .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
                 gap: 16px; margin-bottom: 28px; }
   .stat-card { background: #1a1f36; border: 1px solid #2d3748; border-radius: 12px;
@@ -61,6 +100,12 @@
   .badge-arb { background: #2d3748; color: #9f7aea; }
   .badge-scanner { background: #2d3748; color: #48bb78; }
   .badge-dry { background: #1a2035; color: #718096; }
+  .badge-live-mode { background: #276749; color: #48bb78; font-size: 0.7rem; padding: 2px 8px;
+    border-radius: 10px; font-weight: 700; }
+  .badge-dry-mode { background: #44337a; color: #fbd38d; font-size: 0.7rem; padding: 2px 8px;
+    border-radius: 10px; font-weight: 700; }
+  .badge-halted-mode { background: #742a2a; color: #fc8181; font-size: 0.7rem; padding: 2px 8px;
+    border-radius: 10px; font-weight: 700; animation: flash 0.8s infinite; }
 
   .pnl-pos { color: #48bb78; }
   .pnl-neg { color: #fc8181; }
@@ -73,6 +118,7 @@
   @media (max-width: 900px) {
     .charts-row, .tables-row { grid-template-columns: 1fr; }
     .stats-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+    .control-grid { grid-template-columns: 1fr; }
     .container { padding: 16px; }
   }
 </style>
@@ -83,6 +129,7 @@
   <div class="status-badge">
     <div class="dot offline" id="status-dot"></div>
     <span id="status-text">Loading...</span>
+    <span id="header-mode-badge"></span>
   </div>
 </header>
 
@@ -90,6 +137,46 @@
   <div id="loading" class="loading">Loading dashboard data...</div>
 
   <div id="content" style="display:none">
+
+    <!-- ─── Control Panel ──────────────────────────────────── -->
+    <div class="control-panel" id="control-panel">
+      <div class="control-header">
+        <h2>Control Panel</h2>
+        <div class="connection-status">
+          <div class="dot offline" id="conn-dot"></div>
+          <span class="conn-label" id="conn-text">Checking...</span>
+        </div>
+      </div>
+      <div class="control-grid">
+        <!-- Mode Toggle -->
+        <div class="control-card">
+          <div class="control-label">Trading Mode</div>
+          <div class="mode-toggle">
+            <span class="mode-option" id="mode-dry">PAPER</span>
+            <span class="mode-option" id="mode-live">LIVE</span>
+          </div>
+          <div class="control-sub" id="mode-updated">--</div>
+        </div>
+        <!-- Trading Status -->
+        <div class="control-card">
+          <div class="control-label">Trading Status</div>
+          <div id="trading-status-text" class="trading-status">--</div>
+          <div class="control-sub" id="halt-reason"></div>
+        </div>
+        <!-- Emergency Stop / Resume -->
+        <div class="control-card">
+          <button class="btn-emergency" id="btn-emergency" onclick="emergencyStop()">
+            EMERGENCY STOP
+          </button>
+          <button class="btn-resume" id="btn-resume" onclick="resumeTrading()" style="display:none">
+            RESUME TRADING
+          </button>
+          <div class="control-sub" id="last-run-text">--</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── Stats Grid ─────────────────────────────────────── -->
     <div class="stats-grid">
       <div class="stat-card"><div class="stat-label">Portfolio Value</div>
         <div class="stat-value neutral" id="portfolio-value">--</div></div>
@@ -148,7 +235,12 @@
 </div>
 
 <script>
-let growthChart, strategyChart;
+var REPO_OWNER = 'coderb89';
+var REPO_NAME = 'polybot';
+var WORKFLOW_FILE = 'bot.yml';
+var DISPATCH_URL = 'https://github.com/' + REPO_OWNER + '/' + REPO_NAME + '/actions/workflows/' + WORKFLOW_FILE;
+
+var growthChart, strategyChart;
 
 function fmt(n, prefix) {
   prefix = prefix || '$';
@@ -182,6 +274,34 @@ function strategyLabel(s) {
   return map[s] || s;
 }
 
+// ─── Control Panel Actions ─────────────────────────────────
+
+function toggleMode(newMode) {
+  var label = newMode === 'live' ? 'LIVE TRADING' : 'PAPER TRADING';
+  if (newMode === 'live') {
+    if (!confirm('WARNING: Switch to LIVE TRADING?\n\nReal trades will be placed with real money on Polymarket.\n\nAre you sure?')) return;
+    if (!confirm('FINAL CONFIRMATION:\n\nThis will enable live trading on the next bot cycle (within 10 minutes).\n\nProceed?')) return;
+  } else {
+    if (!confirm('Switch to Paper Trading mode?\n\nThe bot will stop placing real trades.')) return;
+  }
+  alert('You will be redirected to GitHub Actions.\n\nClick "Run workflow" and select:\n  Mode: ' + newMode + '\n\nThe change takes effect on the next bot cycle.');
+  window.open(DISPATCH_URL, '_blank');
+}
+
+function emergencyStop() {
+  if (!confirm('EMERGENCY STOP\n\nThis will immediately halt ALL trading.\nNo trades will be placed until you resume.\n\nContinue?')) return;
+  alert('You will be redirected to GitHub Actions.\n\nClick "Run workflow" and select:\n  Trading enabled: false\n\nAll trading will be halted.');
+  window.open(DISPATCH_URL, '_blank');
+}
+
+function resumeTrading() {
+  if (!confirm('Resume trading?\n\nThe bot will start placing trades on the next cycle.')) return;
+  alert('You will be redirected to GitHub Actions.\n\nClick "Run workflow" and select:\n  Trading enabled: true');
+  window.open(DISPATCH_URL, '_blank');
+}
+
+// ─── Render Dashboard ──────────────────────────────────────
+
 function renderDashboard(data) {
   document.getElementById('loading').style.display = 'none';
   document.getElementById('content').style.display = 'block';
@@ -206,17 +326,92 @@ function renderDashboard(data) {
   pctEl.textContent = (s.pct_return >= 0 ? '+' : '') + s.pct_return + '%';
   pctEl.className = 'stat-value ' + (s.pct_return >= 0 ? 'positive' : 'negative');
 
-  // Health status
+  // ─── Control Panel ───────────────────────────────────
+  var ctrl = data.control;
+  if (ctrl) {
+    document.getElementById('control-panel').style.display = 'block';
+
+    // Mode toggle
+    var dryEl = document.getElementById('mode-dry');
+    var liveEl = document.getElementById('mode-live');
+    dryEl.className = 'mode-option' + (ctrl.mode === 'dry_run' ? ' active-dry' : '');
+    liveEl.className = 'mode-option' + (ctrl.mode === 'live' ? ' active-live' : '');
+    dryEl.onclick = function() { if (ctrl.mode !== 'dry_run') toggleMode('dry_run'); };
+    liveEl.onclick = function() { if (ctrl.mode !== 'live') toggleMode('live'); };
+
+    document.getElementById('mode-updated').textContent =
+      'Updated by ' + (ctrl.updated_by || '--') + ' at ' + (ctrl.updated_at || '--').slice(11, 19) + ' UTC';
+
+    // Trading status
+    var statusEl = document.getElementById('trading-status-text');
+    var haltEl = document.getElementById('halt-reason');
+    if (ctrl.trading_enabled) {
+      statusEl.textContent = 'ACTIVE';
+      statusEl.className = 'trading-status active';
+      haltEl.textContent = '';
+      document.getElementById('btn-emergency').style.display = 'block';
+      document.getElementById('btn-resume').style.display = 'none';
+    } else {
+      statusEl.textContent = 'HALTED';
+      statusEl.className = 'trading-status halted';
+      haltEl.textContent = ctrl.halt_reason || 'Emergency stop';
+      haltEl.style.color = '#fc8181';
+      document.getElementById('btn-emergency').style.display = 'none';
+      document.getElementById('btn-resume').style.display = 'block';
+    }
+
+    // Connection status
+    var connDot = document.getElementById('conn-dot');
+    var connText = document.getElementById('conn-text');
+    var lastRunText = document.getElementById('last-run-text');
+    if (ctrl.last_bot_run) {
+      var lastRun = new Date(ctrl.last_bot_run);
+      var minutesAgo = Math.round((Date.now() - lastRun.getTime()) / 60000);
+      if (minutesAgo < 15) {
+        connDot.className = 'dot live';
+        connText.textContent = 'Connected to Polymarket';
+        lastRunText.textContent = 'Last run: ' + minutesAgo + 'm ago';
+      } else {
+        connDot.className = 'dot offline';
+        connText.textContent = 'Offline (' + minutesAgo + 'm since last run)';
+        lastRunText.textContent = 'Last: ' + ctrl.last_bot_run.slice(0, 16);
+      }
+    } else {
+      connDot.className = 'dot offline';
+      connText.textContent = 'Never connected';
+      lastRunText.textContent = 'Awaiting first run';
+    }
+
+    // Header mode badge
+    var headerBadge = document.getElementById('header-mode-badge');
+    if (!ctrl.trading_enabled) {
+      headerBadge.innerHTML = '<span class="badge-halted-mode">HALTED</span>';
+    } else if (ctrl.mode === 'live') {
+      headerBadge.innerHTML = '<span class="badge-live-mode">LIVE</span>';
+    } else {
+      headerBadge.innerHTML = '<span class="badge-dry-mode">PAPER</span>';
+    }
+  } else {
+    // Fallback: infer mode from trade data
+    var isDry = (data.trades && data.trades.length > 0 && data.trades[0].dry_run);
+    var headerBadge2 = document.getElementById('header-mode-badge');
+    headerBadge2.innerHTML = isDry
+      ? '<span class="badge-dry-mode">PAPER</span>'
+      : '<span class="badge-live-mode">LIVE</span>';
+  }
+
+  // Header health status
   var dot = document.getElementById('status-dot');
   var txt = document.getElementById('status-text');
-  var isDry = (data.trades && data.trades.length > 0 && data.trades[0].dry_run);
-  var modeLabel = isDry ? ' [PAPER TRADING]' : ' [LIVE]';
-  if (data.health && data.health.bot_active) {
+  if (ctrl && !ctrl.trading_enabled) {
+    dot.className = 'dot halted';
+    txt.textContent = 'Trading Halted';
+  } else if (data.health && data.health.bot_active) {
     dot.className = 'dot live';
-    txt.textContent = 'Bot Active' + modeLabel;
+    txt.textContent = 'Bot Active';
   } else if (data.health && data.health.last_trade) {
     dot.className = 'dot offline';
-    txt.textContent = 'Last: ' + data.health.last_trade.slice(0, 16) + modeLabel;
+    txt.textContent = 'Last: ' + data.health.last_trade.slice(0, 16);
   } else {
     dot.className = 'dot offline';
     txt.textContent = 'No activity yet';
@@ -262,7 +457,7 @@ function renderDashboard(data) {
   if (breakdown.length > 0) {
     var sLabels = breakdown.map(function(d) { return strategyLabel(d.strategy); });
     var sValues = breakdown.map(function(d) { return Math.abs(d.total_pnl); });
-    var sColors = ['#63b3ed', '#fbd38d', '#9f7aea'];
+    var sColors = ['#63b3ed', '#fbd38d', '#9f7aea', '#48bb78'];
 
     if (strategyChart) strategyChart.destroy();
     var ctx2 = document.getElementById('strategyChart').getContext('2d');
@@ -333,11 +528,12 @@ function renderDashboard(data) {
 
   // Refresh timer
   if (data.exported_at) {
-    document.getElementById('refresh-timer').textContent = 'Data exported: ' + data.exported_at.slice(0, 19) + ' UTC';
+    document.getElementById('refresh-timer').textContent = 'Data exported: ' + data.exported_at.slice(0, 19) + ' UTC | Auto-refreshes every 30s';
   }
 }
 
-// Load data from JSON file (cache-busted to always get fresh data)
+// ─── Data Loading ──────────────────────────────────────────
+
 var cacheBust = '?t=' + Date.now();
 fetch('dashboard_data.json' + cacheBust)
   .then(function(r) {

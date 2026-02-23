@@ -207,7 +207,8 @@ class Portfolio:
 
     # ─── Dashboard JSON Export ────────────────────────────────────────────────
 
-    def export_dashboard_json(self, output_path: str = "dashboard/dashboard_data.json"):
+    def export_dashboard_json(self, output_path: str = "dashboard/dashboard_data.json",
+                               extra_data: dict = None):
         """Export all dashboard data to a single JSON file for GitHub Pages."""
         total_pnl = self.get_total_pnl()
         daily_pnl = self.get_daily_pnl()
@@ -312,6 +313,10 @@ class Portfolio:
             },
             "exported_at": datetime.utcnow().isoformat(),
         }
+
+        # Merge any extra data (e.g., control panel state)
+        if extra_data:
+            dashboard_data.update(extra_data)
 
         out = Path(output_path)
         out.parent.mkdir(parents=True, exist_ok=True)

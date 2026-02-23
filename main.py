@@ -14,7 +14,10 @@ import sys
 
 import httpx
 
+from datetime import datetime, timezone
+
 from config.settings import Settings
+from core.bot_control import load_control, save_control
 from core.portfolio import Portfolio
 from core.risk_manager import RiskManager
 from strategies.weather_arb import WeatherArbStrategy
@@ -123,10 +126,31 @@ async def check_wallet_balance(address: str, clob_host: str = "https://clob.poly
 class PolyBot:
     def __init__(self, export_dashboard: bool = False):
         self.settings = Settings()
+
+        # ── Load control file (dashboard kill switch / mode toggle) ──
+        self.control = load_control()
+
+        # Override DRY_RUN from control file
+        if self.control.mode == "live":
+            if self.settings.PRIVATE_KEY:
+                self.settings.DRY_RUN = False
+            else:
+                logger.critical("Cannot switch to LIVE mode: PRIVATE_KEY not configured. Staying in DRY RUN.")
+                self.control.mode = "dry_run"
+                self.settings.DRY_RUN = True
+        else:
+            self.settings.DRY_RUN = True
+
         self.portfolio = Portfolio(self.settings)
         self.risk_manager = RiskManager(self.settings, self.portfolio)
         self.alerter = TelegramAlerter(self.settings)
         self.export_dashboard = export_dashboard
+
+        # ── Apply emergency halt from control file ──
+        if self.control.is_halted:
+            reason = self.control.halt_reason or "Emergency stop activated from dashboard"
+            self.risk_manager._halt_trading(reason)
+            logger.critical(f"TRADING HALTED by control file: {reason}")
 
         self.strategies = []
         if self.settings.ENABLE_WEATHER_ARB:
@@ -139,7 +163,9 @@ class PolyBot:
             self.strategies.append(GeneralScannerStrategy(self.settings, self.portfolio, self.risk_manager))
 
         logger.info(f"PolyBot initialized with {len(self.strategies)} strategies")
-        logger.info(f"Mode: {'DRY RUN' if self.settings.DRY_RUN else 'LIVE TRADING'}")
+        mode_str = "LIVE TRADING" if not self.settings.DRY_RUN else "DRY RUN"
+        halt_str = " [HALTED]" if self.control.is_halted else ""
+        logger.info(f"Mode: {mode_str}{halt_str}")
 
     async def run_once(self):
         """Single scan-and-trade cycle (for GitHub Actions cron)."""
@@ -197,9 +223,33 @@ class PolyBot:
         logger.info(f"Scan complete:\n{summary}")
         await self.alerter.send(f"Scan complete\n{summary}")
 
-        # Export dashboard data for GitHub Pages
+        # ── Update control state ──
+        self.control.last_bot_run = datetime.now(timezone.utc).isoformat()
+        self.control.updated_by = "bot"
+        self.control.updated_at = datetime.now(timezone.utc).isoformat()
+
+        # If risk manager halted during this run, reflect in control file
+        if self.risk_manager.is_halted() and self.control.trading_enabled:
+            self.control.trading_enabled = False
+            self.control.halt_reason = self.risk_manager._halt_reason
+
+        save_control(self.control)
+
+        # Export dashboard data for GitHub Pages (include control state)
         if self.export_dashboard:
-            self.portfolio.export_dashboard_json("dashboard/dashboard_data.json")
+            control_data = {
+                "control": {
+                    "mode": self.control.mode,
+                    "trading_enabled": self.control.trading_enabled,
+                    "halt_reason": self.control.halt_reason,
+                    "updated_by": self.control.updated_by,
+                    "updated_at": self.control.updated_at,
+                    "last_bot_run": self.control.last_bot_run,
+                }
+            }
+            self.portfolio.export_dashboard_json(
+                "dashboard/dashboard_data.json", extra_data=control_data
+            )
             logger.info("Dashboard data exported")
 
         # Cleanup strategies

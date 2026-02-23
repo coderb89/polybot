@@ -3,7 +3,26 @@ name: PolyBot Trading
 on:
   schedule:
     - cron: '*/10 * * * *'  # Every 10 minutes
-  workflow_dispatch: {}      # Manual trigger from Actions tab
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Trading mode (leave empty = no change)'
+        required: false
+        default: ''
+        type: choice
+        options:
+          - ''
+          - dry_run
+          - live
+      trading_enabled:
+        description: 'Enable/disable trading (leave empty = no change)'
+        required: false
+        default: ''
+        type: choice
+        options:
+          - ''
+          - 'true'
+          - 'false'
 
 concurrency:
   group: polybot-trading
@@ -19,6 +38,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -36,6 +60,56 @@ jobs:
           path: data/
         continue-on-error: true  # First run won't have an artifact
 
+      - name: Apply control inputs
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          INPUT_MODE: ${{ github.event.inputs.mode }}
+          INPUT_TRADING: ${{ github.event.inputs.trading_enabled }}
+        run: |
+          python3 -c "
+          import json, os
+          from datetime import datetime, timezone
+
+          path = 'data/bot_control.json'
+          try:
+              with open(path) as f:
+                  ctrl = json.load(f)
+          except (FileNotFoundError, json.JSONDecodeError):
+              ctrl = {
+                  'mode': 'dry_run', 'trading_enabled': True,
+                  'updated_by': 'system',
+                  'updated_at': datetime.now(timezone.utc).isoformat(),
+                  'last_bot_run': None, 'halt_reason': None
+              }
+
+          mode_input = os.environ.get('INPUT_MODE', '')
+          trading_input = os.environ.get('INPUT_TRADING', '')
+
+          changed = False
+          if mode_input in ('dry_run', 'live'):
+              ctrl['mode'] = mode_input
+              changed = True
+              print(f'Mode set to: {mode_input}')
+          if trading_input in ('true', 'false'):
+              ctrl['trading_enabled'] = (trading_input == 'true')
+              changed = True
+              if trading_input == 'false':
+                  ctrl['halt_reason'] = 'Manual halt from workflow dispatch'
+              else:
+                  ctrl['halt_reason'] = None
+              print(f'Trading enabled set to: {trading_input}')
+
+          if changed:
+              ctrl['updated_by'] = 'workflow_dispatch'
+              ctrl['updated_at'] = datetime.now(timezone.utc).isoformat()
+
+          os.makedirs('data', exist_ok=True)
+          with open(path, 'w') as f:
+              json.dump(ctrl, f, indent=2)
+
+          print(f'Control state: mode={ctrl[\"mode\"]}, trading_enabled={ctrl[\"trading_enabled\"]}')
+          "
+
       - name: Run PolyBot (single cycle)
         env:
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
@@ -49,6 +123,13 @@ jobs:
           INITIAL_CAPITAL: ${{ secrets.INITIAL_CAPITAL || '100' }}
           GITHUB_ACTIONS: 'true'
         run: python main.py --export-dashboard
+
+      - name: Commit control state
+        if: always()
+        run: |
+          git add data/bot_control.json
+          git diff --cached --quiet && echo "No control changes to commit" || \
+          (git commit -m "Update bot control state [skip ci]" && git push origin main)
 
       - name: Save database artifact
         uses: actions/upload-artifact@v4
@@ -66,9 +147,6 @@ jobs:
           mkdir -p /tmp/pages
           cp dashboard/index.html /tmp/pages/index.html
           cp dashboard/dashboard_data.json /tmp/pages/dashboard_data.json 2>/dev/null || true
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
 
           # Create clean orphan branch
           git checkout --orphan gh-pages-deploy
