@@ -1,8 +1,8 @@
 {
   "mode": "dry_run",
   "trading_enabled": true,
-  "updated_by": "system",
-  "updated_at": "2026-02-21T00:00:00Z",
-  "last_bot_run": null,
+  "updated_by": "bot",
+  "updated_at": "2026-02-23T07:57:54.364724+00:00",
+  "last_bot_run": "2026-02-23T07:57:54.364712+00:00",
   "halt_reason": null
 }
