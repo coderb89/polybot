@@ -197,6 +197,12 @@ class PolyBot:
         # Check if risk manager needs daily reset
         self.risk_manager.check_daily_reset()
 
+        # ── Resolve open positions (check for market settlements) ──
+        try:
+            await self.portfolio.resolve_positions()
+        except Exception as e:
+            logger.error(f"Position resolution failed: {e}", exc_info=True)
+
         # Run each strategy's single scan
         for strategy in self.strategies:
             try:

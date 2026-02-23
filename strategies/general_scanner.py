@@ -34,7 +34,7 @@ class GeneralScannerStrategy:
         try:
             opportunities = await self._scan_markets()
             executed = 0
-            for opp in opportunities[:3]:  # Max 3 trades per cycle
+            for opp in opportunities[:5]:  # Max 5 trades per cycle
                 success = await self._execute_trade(opp)
                 if success:
                     executed += 1
@@ -53,10 +53,14 @@ class GeneralScannerStrategy:
         skipped_no_book = 0
         skipped_low_liq = 0
 
-        for market in markets[:100]:  # Analyze top 100 markets by volume
+        for market in markets[:200]:  # Analyze top 200 markets by volume
             condition_id = market.get("condition_id", "")
 
-            # Skip recently traded markets (1 hour cooldown)
+            # Skip markets where we already have an open position (persisted in DB)
+            if self.portfolio.has_open_position(condition_id):
+                continue
+
+            # Skip recently traded markets (1 hour in-memory cooldown)
             if condition_id in self.traded_markets:
                 if time.time() - self.traded_markets[condition_id] < 3600:
                     continue
@@ -136,10 +140,10 @@ class GeneralScannerStrategy:
             # always losers despite seeming "high edge".
             spread = yes_book.spread
 
-            if 0.05 <= yes_mid <= 0.45 and spread < 0.10 and min_liquidity > 50:
+            if 0.05 <= yes_mid <= 0.50 and spread < 0.12 and min_liquidity > 30:
                 # Cheap YES — potential value
-                edge = 0.45 - yes_mid  # Implied edge to fair value
-                if edge > 0.03:
+                edge = 0.50 - yes_mid  # Implied edge to fair value
+                if edge > 0.02:
                     opportunities.append({
                         "type": "value",
                         "condition_id": condition_id,
@@ -152,9 +156,9 @@ class GeneralScannerStrategy:
                         "liquidity": min_liquidity,
                         "side": "BUY_YES",
                     })
-            elif 0.05 <= no_mid <= 0.45 and spread < 0.10 and min_liquidity > 50:
-                edge = 0.45 - no_mid
-                if edge > 0.03:
+            elif 0.05 <= no_mid <= 0.50 and spread < 0.12 and min_liquidity > 30:
+                edge = 0.50 - no_mid
+                if edge > 0.02:
                     opportunities.append({
                         "type": "value",
                         "condition_id": condition_id,

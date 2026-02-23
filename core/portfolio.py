@@ -1,15 +1,20 @@
 """
 Portfolio tracker - tracks all positions, PnL, and trade history.
 Persists to SQLite for the dashboard.
+
+Includes position resolution: auto-closes expired markets and
+tracks actual P&L based on market outcomes.
 """
 
 import sqlite3
 import json
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from dataclasses import dataclass
 from typing import List, Optional, Dict
 from pathlib import Path
+
+import httpx
 
 logger = logging.getLogger("polybot.portfolio")
 
@@ -30,6 +35,8 @@ class Trade:
     order_id: Optional[str] = None
     pnl: Optional[float] = None
     status: str = "open"
+    closed_at: Optional[str] = None
+    close_reason: Optional[str] = None
 
 
 class Portfolio:
@@ -55,6 +62,25 @@ class Portfolio:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    def get_closed_positions(self, limit: int = 50) -> List[Dict]:
+        """Get recently closed/resolved trade positions."""
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM trades WHERE status IN ('won','lost','resolved','expired') "
+                "ORDER BY closed_at DESC, timestamp DESC LIMIT ?",
+                (limit,)
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def has_open_position(self, market_id: str) -> bool:
+        """Check if we already have an open position in this market."""
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM trades WHERE market_id=? AND status='open'",
+                (market_id,)
+            ).fetchone()
+            return row[0] > 0
+
     def _get_conn(self):
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
@@ -77,7 +103,9 @@ class Portfolio:
                     dry_run INTEGER DEFAULT 1,
                     order_id TEXT,
                     pnl REAL,
-                    status TEXT DEFAULT 'open'
+                    status TEXT DEFAULT 'open',
+                    closed_at TEXT,
+                    close_reason TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS portfolio_snapshots (
@@ -95,7 +123,17 @@ class Portfolio:
                 CREATE INDEX IF NOT EXISTS idx_trades_timestamp ON trades(timestamp);
                 CREATE INDEX IF NOT EXISTS idx_trades_strategy ON trades(strategy);
                 CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
+                CREATE INDEX IF NOT EXISTS idx_trades_market_id ON trades(market_id);
             """)
+
+            # Migration: add closed_at and close_reason columns if missing
+            try:
+                conn.execute("SELECT closed_at FROM trades LIMIT 1")
+            except sqlite3.OperationalError:
+                conn.execute("ALTER TABLE trades ADD COLUMN closed_at TEXT")
+                conn.execute("ALTER TABLE trades ADD COLUMN close_reason TEXT")
+                logger.info("Migrated DB: added closed_at, close_reason columns")
+
         logger.info(f"Database initialized at {self.db_path}")
 
     def log_trade(self, trade: Trade) -> int:
@@ -103,25 +141,34 @@ class Portfolio:
             cur = conn.execute("""
                 INSERT INTO trades
                 (timestamp, strategy, market_id, market_question, side, token_id,
-                 price, size_usd, edge_pct, dry_run, order_id, pnl, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 price, size_usd, edge_pct, dry_run, order_id, pnl, status,
+                 closed_at, close_reason)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                datetime.utcnow().isoformat(),
+                datetime.now(timezone.utc).isoformat(),
                 trade.strategy, trade.market_id, trade.market_question,
                 trade.side, trade.token_id, trade.price, trade.size_usd,
                 trade.edge_pct, int(trade.dry_run), trade.order_id,
-                trade.pnl, trade.status
+                trade.pnl, trade.status, trade.closed_at, trade.close_reason
             ))
             trade_id = cur.lastrowid
             logger.debug(f"Trade logged: id={trade_id} strategy={trade.strategy} size=${trade.size_usd:.2f}")
             return trade_id
 
-    def update_trade_pnl(self, trade_id: int, pnl: float, status: str = "resolved"):
+    def close_trade(self, trade_id: int, pnl: float, status: str = "resolved",
+                    reason: str = "market_resolved"):
+        """Close a trade with final P&L."""
+        now = datetime.now(timezone.utc).isoformat()
         with self._get_conn() as conn:
             conn.execute(
-                "UPDATE trades SET pnl=?, status=? WHERE id=?",
-                (pnl, status, trade_id)
+                "UPDATE trades SET pnl=?, status=?, closed_at=?, close_reason=? WHERE id=?",
+                (pnl, status, now, reason, trade_id)
             )
+        logger.info(f"Trade {trade_id} closed: status={status}, pnl=${pnl:+.4f}, reason={reason}")
+
+    def update_trade_pnl(self, trade_id: int, pnl: float, status: str = "resolved"):
+        """Legacy method — use close_trade() for new code."""
+        self.close_trade(trade_id, pnl, status, "legacy_update")
 
     def get_total_pnl(self) -> float:
         with self._get_conn() as conn:
@@ -205,6 +252,175 @@ class Portfolio:
         with self._get_conn() as conn:
             return conn.execute("SELECT COUNT(*) FROM trades").fetchone()[0]
 
+    # ─── Position Resolution ─────────────────────────────────────────────────
+
+    async def resolve_positions(self, gamma_host: str = "https://gamma-api.polymarket.com"):
+        """Check all open positions and resolve any that have settled.
+
+        For each open trade:
+        1. Query Gamma API for current market status
+        2. If market is resolved/closed → calculate P&L and close position
+        3. For arb trades (BOTH sides) → always profit when market resolves
+        4. For value trades → profit if our side won
+        """
+        open_trades = self.get_open_positions()
+        if not open_trades:
+            return
+
+        logger.info(f"Resolving {len(open_trades)} open positions...")
+        resolved_count = 0
+
+        # Group by market_id to batch API calls
+        market_ids = set(t["market_id"] for t in open_trades if t.get("market_id"))
+
+        market_status = {}
+        for mid in market_ids:
+            status = await self._check_market_status(mid, gamma_host)
+            if status:
+                market_status[mid] = status
+
+        for trade in open_trades:
+            mid = trade.get("market_id", "")
+            if mid not in market_status:
+                continue
+
+            status = market_status[mid]
+            if not status.get("resolved", False) and not status.get("closed", False):
+                continue
+
+            # Market is resolved — calculate P&L
+            pnl = self._calculate_pnl(trade, status)
+            win_status = "won" if pnl > 0 else "lost" if pnl < 0 else "resolved"
+
+            self.close_trade(
+                trade["id"], pnl, win_status,
+                f"market_resolved: {status.get('winning_outcome', 'unknown')}"
+            )
+            resolved_count += 1
+
+        if resolved_count > 0:
+            logger.info(f"Resolved {resolved_count} positions")
+
+    async def _check_market_status(self, condition_id: str,
+                                    gamma_host: str) -> Optional[Dict]:
+        """Query Gamma API for market resolution status."""
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    f"{gamma_host}/markets",
+                    params={"condition_id": condition_id, "limit": 1}
+                )
+                if resp.status_code != 200:
+                    return None
+
+                data = resp.json()
+                if isinstance(data, list) and len(data) > 0:
+                    m = data[0]
+                elif isinstance(data, dict):
+                    m = data
+                else:
+                    return None
+
+                resolved = m.get("resolved", False) or m.get("closed", False)
+                winning_outcome = m.get("winningOutcome", m.get("winning_outcome"))
+
+                # Get outcome prices (1.0 for winner, 0.0 for loser)
+                outcome_prices = {}
+                outcomes_raw = m.get("outcomePrices", m.get("outcome_prices", "[]"))
+                outcomes_names = m.get("outcomes", '["Yes", "No"]')
+
+                try:
+                    if isinstance(outcomes_raw, str):
+                        prices = json.loads(outcomes_raw)
+                    else:
+                        prices = outcomes_raw
+
+                    if isinstance(outcomes_names, str):
+                        names = json.loads(outcomes_names)
+                    else:
+                        names = outcomes_names
+
+                    for i, name in enumerate(names):
+                        if i < len(prices):
+                            outcome_prices[name.upper()] = float(prices[i])
+                except Exception:
+                    pass
+
+                return {
+                    "resolved": resolved,
+                    "closed": m.get("closed", False),
+                    "winning_outcome": winning_outcome,
+                    "outcome_prices": outcome_prices,
+                    "end_date": m.get("endDateIso", m.get("endDate", "")),
+                }
+        except Exception as e:
+            logger.debug(f"Market status check failed for {condition_id[:16]}: {e}")
+            return None
+
+    def _calculate_pnl(self, trade: Dict, market_status: Dict) -> float:
+        """Calculate realized P&L for a resolved trade.
+
+        Arb trades (side=BOTH): Buy YES + NO for < $1 → guaranteed $1 payout
+          PnL = size_usd * (1.0 / entry_price - 1) minus fees
+
+        Value trades (BUY_YES/BUY_NO): Profit if our outcome wins
+          Win: PnL = size_usd * (1.0 / entry_price - 1) = tokens_owned * $1 - cost
+          Lose: PnL = -size_usd (total loss)
+        """
+        side = trade.get("side", "")
+        entry_price = trade.get("price", 0)
+        size_usd = trade.get("size_usd", 0)
+        winning = market_status.get("winning_outcome", "")
+        outcome_prices = market_status.get("outcome_prices", {})
+
+        if side == "BOTH":
+            # Arb trade: bought YES + NO for entry_price (combined)
+            # Payout is always $1.00 per pair
+            if entry_price > 0:
+                tokens_per_side = size_usd / 2 / (entry_price / 2)
+                pnl = tokens_per_side * 1.0 - size_usd
+                # Subtract fees (~0.2% each side)
+                pnl -= size_usd * 0.004
+            else:
+                pnl = 0.0
+
+        elif side in ("BUY_YES", "BUY"):
+            # We bought YES tokens
+            if winning and winning.upper() == "YES":
+                # WIN: tokens pay out $1 each
+                tokens_owned = size_usd / entry_price if entry_price > 0 else 0
+                pnl = tokens_owned * 1.0 - size_usd
+            elif winning and winning.upper() == "NO":
+                # LOSE: YES tokens worthless
+                pnl = -size_usd
+            else:
+                # Use outcome_prices if available
+                yes_final = outcome_prices.get("YES", 0)
+                if yes_final > 0.5:
+                    tokens_owned = size_usd / entry_price if entry_price > 0 else 0
+                    pnl = tokens_owned * yes_final - size_usd
+                else:
+                    pnl = -size_usd
+
+        elif side == "BUY_NO":
+            # We bought NO tokens
+            if winning and winning.upper() == "NO":
+                tokens_owned = size_usd / entry_price if entry_price > 0 else 0
+                pnl = tokens_owned * 1.0 - size_usd
+            elif winning and winning.upper() == "YES":
+                pnl = -size_usd
+            else:
+                no_final = outcome_prices.get("NO", 0)
+                if no_final > 0.5:
+                    tokens_owned = size_usd / entry_price if entry_price > 0 else 0
+                    pnl = tokens_owned * no_final - size_usd
+                else:
+                    pnl = -size_usd
+        else:
+            pnl = 0.0
+
+        return round(pnl, 4)
+
     # ─── Dashboard JSON Export ────────────────────────────────────────────────
 
     def export_dashboard_json(self, output_path: str = "dashboard/dashboard_data.json",
@@ -284,6 +500,14 @@ class Portfolio:
             ).fetchall()
             open_positions = [dict(r) for r in pos_rows]
 
+        # Closed positions (recently resolved)
+        with self._get_conn() as conn:
+            closed_rows = conn.execute(
+                "SELECT * FROM trades WHERE status IN ('won','lost','resolved','expired') "
+                "ORDER BY closed_at DESC, timestamp DESC LIMIT 50"
+            ).fetchall()
+            closed_positions = [dict(r) for r in closed_rows]
+
         # Health
         last_trade = trades[0]["timestamp"] if trades else None
         bot_active = False
@@ -306,6 +530,7 @@ class Portfolio:
             "pnl_series": pnl_series,
             "strategy_breakdown": strategy_breakdown,
             "open_positions": open_positions,
+            "closed_positions": closed_positions,
             "health": {
                 "bot_active": bot_active,
                 "last_trade": last_trade,

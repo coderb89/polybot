@@ -134,6 +134,10 @@ class CrossPlatformArbStrategy:
         for market in markets[:100]:
             condition_id = market.get("condition_id", "")
 
+            # Skip markets where we already have an open position (persisted in DB)
+            if self.portfolio.has_open_position(condition_id):
+                continue
+
             if condition_id in self.executed_arbs:
                 if time.time() - self.executed_arbs[condition_id] < 3600:
                     continue

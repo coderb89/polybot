@@ -44,11 +44,11 @@ class Settings:
 
     # ─── Capital & Risk ─────────────────────────────────────────────
     INITIAL_CAPITAL: float = field(default_factory=lambda: float(os.getenv("INITIAL_CAPITAL", "100")))
-    MAX_POSITION_PCT: float = 0.05
-    MAX_GLOBAL_EXPOSURE_PCT: float = 0.40
-    DAILY_LOSS_LIMIT_PCT: float = 0.10
-    MAX_SIMULTANEOUS_POSITIONS: int = 10
-    KELLY_FRACTION: float = 0.25
+    MAX_POSITION_PCT: float = 0.08            # 8% per trade (was 5%)
+    MAX_GLOBAL_EXPOSURE_PCT: float = 0.70     # 70% deployed (was 40%)
+    DAILY_LOSS_LIMIT_PCT: float = 0.15        # 15% daily loss limit (was 10%)
+    MAX_SIMULTANEOUS_POSITIONS: int = 20      # Up to 20 positions (was 10)
+    KELLY_FRACTION: float = 0.30              # 30% Kelly (was 25%)
 
     # ─── Strategy Toggles ───────────────────────────────────────────
     ENABLE_WEATHER_ARB: bool = True
