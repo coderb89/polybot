@@ -26,6 +26,7 @@ from strategies.cross_platform_arb import CrossPlatformArbStrategy
 from strategies.general_scanner import GeneralScannerStrategy
 from strategies.momentum_scalper import MomentumScalperStrategy
 from strategies.spread_capture import SpreadCaptureStrategy
+from strategies.sports_intel import SportsIntelStrategy
 from utils.logger import setup_logger
 from utils.telegram_alerts import TelegramAlerter
 
@@ -167,6 +168,8 @@ class PolyBot:
             self.strategies.append(MomentumScalperStrategy(self.settings, self.portfolio, self.risk_manager))
         if self.settings.ENABLE_SPREAD_CAPTURE:
             self.strategies.append(SpreadCaptureStrategy(self.settings, self.portfolio, self.risk_manager))
+        if self.settings.ENABLE_SPORTS_INTEL:
+            self.strategies.append(SportsIntelStrategy(self.settings, self.portfolio, self.risk_manager))
 
         logger.info(f"PolyBot initialized with {len(self.strategies)} strategies")
         mode_str = "LIVE TRADING" if not self.settings.DRY_RUN else "DRY RUN"

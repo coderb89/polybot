@@ -233,9 +233,11 @@ class GeneralScannerStrategy:
 
         if opportunities:
             best = opportunities[0]
+            hrs = best.get('hours_until')
+            hrs_str = f"{hrs:.0f}h" if hrs else "unknown"
             logger.info(f"GeneralScanner: {len(opportunities)} opportunities | "
                        f"Best: {best['type']} {best['return_pct']:.1f}% return, "
-                       f"closes in {best.get('hours_until', '?'):.0f}h")
+                       f"closes in {hrs_str}")
         else:
             logger.info("GeneralScanner: no opportunities found this cycle")
         return opportunities
@@ -255,7 +257,7 @@ class GeneralScannerStrategy:
             logger.info(
                 f"[SCANNER] ARB | {opp['question'][:55]} | "
                 f"YES: {opp['yes_price']:.3f} + NO: {opp['no_price']:.3f} = {(opp['yes_price']+opp['no_price']):.3f} | "
-                f"Return: {opp['return_pct']:.1f}% | Closes: {opp.get('hours_until', '?'):.0f}h | Size: ${trade_size:.2f}"
+                f"Return: {opp['return_pct']:.1f}% | Closes: {opp.get('hours_until') or 0:.0f}h | Size: ${trade_size:.2f}"
             )
             half_size = trade_size / 2
             yes_result = await self.poly_client.place_market_order(
@@ -278,7 +280,7 @@ class GeneralScannerStrategy:
                 )
                 self.portfolio.log_trade(trade)
                 self.traded_markets[opp["condition_id"]] = time.time()
-                logger.info(f"ARB executed! Expected return: {opp['return_pct']:.1f}%, closes in {opp.get('hours_until', '?'):.0f}h")
+                logger.info(f"ARB executed! Expected return: {opp['return_pct']:.1f}%, closes in {opp.get('hours_until') or 0:.0f}h")
                 return True
 
         elif opp["type"] == "value":
@@ -289,7 +291,7 @@ class GeneralScannerStrategy:
             logger.info(
                 f"[SCANNER] VALUE | {opp['question'][:55]} | "
                 f"{side} @ {price:.3f} | Return potential: {opp['return_pct']:.0f}% | "
-                f"Closes: {opp.get('hours_until', '?'):.0f}h | Size: ${trade_size:.2f}"
+                f"Closes: {opp.get('hours_until') or 0:.0f}h | Size: ${trade_size:.2f}"
             )
 
             result = await self.poly_client.place_market_order(
@@ -308,7 +310,7 @@ class GeneralScannerStrategy:
                 )
                 self.portfolio.log_trade(trade)
                 self.traded_markets[opp["condition_id"]] = time.time()
-                logger.info(f"VALUE trade placed: ${trade_size:.2f} | {opp['return_pct']:.0f}% potential | closes {opp.get('hours_until', '?'):.0f}h")
+                logger.info(f"VALUE trade placed: ${trade_size:.2f} | {opp['return_pct']:.0f}% potential | closes {opp.get('hours_until') or 0:.0f}h")
                 return True
 
         return False

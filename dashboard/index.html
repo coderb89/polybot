@@ -422,6 +422,7 @@ function strategyBadge(s) {
     'general_scanner': ['badge-scanner', 'Scanner'],
     'momentum_scalper': ['badge-momentum', 'Momentum'],
     'spread_capture': ['badge-spread', 'Spread'],
+    'sports_intel': ['badge-weather', 'Sports'],
   };
   var entry = map[s] || ['', s];
   return '<span class="badge ' + entry[0] + '">' + entry[1] + '</span>';
@@ -429,7 +430,8 @@ function strategyBadge(s) {
 function strategyLabel(s) {
   var map = { 'weather_arb': 'Weather', 'market_maker': 'MM',
               'cross_platform_arb': 'Arb', 'general_scanner': 'Scanner',
-              'momentum_scalper': 'Momentum', 'spread_capture': 'Spread' };
+              'momentum_scalper': 'Momentum', 'spread_capture': 'Spread',
+              'sports_intel': 'Sports' };
   return map[s] || s;
 }
 function statusBadge(st) {

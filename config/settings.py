@@ -57,6 +57,8 @@ class Settings:
     ENABLE_GENERAL_SCANNER: bool = True
     ENABLE_MOMENTUM_SCALPER: bool = True
     ENABLE_SPREAD_CAPTURE: bool = True
+    ENABLE_SPORTS_INTEL: bool = True
+    ODDS_API_KEY: str = field(default_factory=lambda: os.getenv("ODDS_API_KEY", ""))
     DRY_RUN: bool = field(default_factory=lambda: os.getenv("DRY_RUN", "true").lower() == "true")
 
     # ─── Weather Strategy Config ─────────────────────────────────────
