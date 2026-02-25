@@ -181,7 +181,8 @@ class GeneralScannerStrategy:
             # But we also need actual conviction — not just cheap tokens
 
             # Buy YES side: value opportunity
-            if 0.05 <= yes_mid <= 0.77 and spread < 0.12:
+            # REQUIRE end_date for value bets — no longshots without known resolution
+            if 0.05 <= yes_mid <= 0.77 and spread < 0.12 and hours_until is not None:
                 potential_return = (1.0 / yes_mid - 1.0) * 100  # % return if YES wins
                 if potential_return >= 30 and min_liquidity > 20:
                     opportunities.append({
@@ -201,7 +202,7 @@ class GeneralScannerStrategy:
                     })
 
             # Buy NO side: value opportunity
-            elif 0.05 <= no_mid <= 0.77 and spread < 0.12:
+            elif 0.05 <= no_mid <= 0.77 and spread < 0.12 and hours_until is not None:
                 potential_return = (1.0 / no_mid - 1.0) * 100
                 if potential_return >= 30 and min_liquidity > 20:
                     opportunities.append({
