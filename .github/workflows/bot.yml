@@ -2,7 +2,9 @@ name: PolyBot Trading
 
 on:
   schedule:
-    - cron: '*/5 * * * *'  # Every 5 minutes — 24/7 active trading
+    # NOTE: GitHub Actions free tier has 10-60 min cron delay.
+    # Bot runs as often as GitHub allows (typically every 20-60 min).
+    - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:
       mode:

@@ -55,6 +55,8 @@ class Settings:
     ENABLE_MARKET_MAKER: bool = False  # Disabled - requires continuous quoting
     ENABLE_CROSS_PLATFORM_ARB: bool = True
     ENABLE_GENERAL_SCANNER: bool = True
+    ENABLE_MOMENTUM_SCALPER: bool = True
+    ENABLE_SPREAD_CAPTURE: bool = True
     DRY_RUN: bool = field(default_factory=lambda: os.getenv("DRY_RUN", "true").lower() == "true")
 
     # ─── Weather Strategy Config ─────────────────────────────────────

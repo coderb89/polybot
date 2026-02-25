@@ -212,13 +212,8 @@ class CrossPlatformArbStrategy:
         return opportunities
 
     async def _execute_single_platform_arb(self, opp: Dict):
-        portfolio_val = self.portfolio.get_portfolio_value()
-        # Size per side — buying BOTH YES and NO
-        max_size = min(
-            self.settings.ARB_MAX_POSITION_USD / 2,
-            portfolio_val * self.settings.MAX_POSITION_PCT,
-            opp["min_liquidity"] * 0.1
-        )
+        # Fixed trade size: $1 USD per arb trade
+        max_size = 0.50  # $0.50 per side = $1.00 total
 
         approved, reason = self.risk_manager.approve_trade(max_size, "cross_platform_arb", opp["condition_id"])
         if not approved:

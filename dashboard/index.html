@@ -28,6 +28,8 @@
     --purple-bg: #f5f3ff;
     --amber: #f59e0b;
     --amber-bg: #fffbeb;
+    --cyan: #06b6d4;
+    --cyan-bg: #ecfeff;
     --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
     --shadow-md: 0 4px 12px rgba(0,0,0,0.06);
     --shadow-lg: 0 8px 24px rgba(0,0,0,0.08);
@@ -51,6 +53,7 @@
     --blue-bg: #1e3a5f20;
     --purple-bg: #3b0d6020;
     --amber-bg: #78350f20;
+    --cyan-bg: #083b4520;
     --shadow-sm: 0 1px 2px rgba(0,0,0,0.2);
     --shadow-md: 0 4px 12px rgba(0,0,0,0.3);
     --shadow-lg: 0 8px 24px rgba(0,0,0,0.4);
@@ -86,9 +89,12 @@
 
   /* ─── Theme Toggle ──────────────────────────────────── */
   .theme-toggle { background: var(--bg-secondary); border: 1px solid var(--border);
-                  border-radius: 8px; padding: 6px 8px; cursor: pointer; font-size: 1rem;
-                  transition: all 0.2s; display: flex; align-items: center; }
+                  border-radius: 8px; padding: 5px 7px; cursor: pointer;
+                  transition: all 0.2s; display: flex; align-items: center;
+                  width: 36px; height: 36px; justify-content: center; }
   .theme-toggle:hover { border-color: var(--accent); }
+  .theme-toggle svg { width: 18px; height: 18px; stroke: var(--text-secondary); fill: none;
+                      stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
   /* ─── Container ─────────────────────────────────────── */
   .container { max-width: 1360px; margin: 0 auto; padding: 24px 28px; }
@@ -119,11 +125,20 @@
   .table-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
                 padding: 18px; overflow: hidden; box-shadow: var(--shadow-sm); margin-bottom: 16px; }
   .table-card h3 { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 14px;
-                   text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+                   text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;
+                   display: flex; align-items: center; justify-content: space-between; }
+  .table-card h3 .count { font-size: 0.72rem; background: var(--bg-secondary);
+                          padding: 2px 8px; border-radius: 10px; }
+  .table-scroll { max-height: 320px; overflow-y: auto; scrollbar-width: thin;
+                  scrollbar-color: var(--border) transparent; }
+  .table-scroll::-webkit-scrollbar { width: 6px; }
+  .table-scroll::-webkit-scrollbar-track { background: transparent; }
+  .table-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .table-scroll::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
   table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
   th { text-align: left; padding: 8px 10px; color: var(--text-muted); font-weight: 600;
        border-bottom: 1px solid var(--border); font-size: 0.72rem; text-transform: uppercase;
-       letter-spacing: 0.04em; }
+       letter-spacing: 0.04em; position: sticky; top: 0; background: var(--bg-card); z-index: 1; }
   td { padding: 9px 10px; border-bottom: 1px solid var(--border); color: var(--text-primary);
        max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
        transition: background 0.15s; }
@@ -135,6 +150,8 @@
   .badge-weather { background: var(--blue-bg); color: var(--blue); }
   .badge-arb { background: var(--purple-bg); color: var(--purple); }
   .badge-scanner { background: var(--green-bg); color: var(--green); }
+  .badge-momentum { background: var(--amber-bg); color: var(--amber); }
+  .badge-spread { background: var(--cyan-bg); color: var(--cyan); }
   .badge-dry { background: var(--bg-secondary); color: var(--text-muted); }
   .badge-won { background: var(--green-bg); color: var(--green); }
   .badge-lost { background: var(--red-bg); color: var(--red); }
@@ -255,7 +272,10 @@
   </div>
   <div class="header-right">
     <span class="mode-pill paper" id="header-mode-badge">PAPER</span>
-    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme" id="theme-btn">&#127769;</button>
+    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme" id="theme-btn">
+      <svg id="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      <svg id="icon-sun" viewBox="0 0 24 24" style="display:none"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+    </button>
   </div>
 </header>
 
@@ -267,7 +287,14 @@
     <!-- ─── Stats Grid ─────────────────────────────────── -->
     <div class="stats-grid">
       <div class="stat-card"><div class="stat-label">Portfolio Value</div>
-        <div class="stat-value neutral" id="portfolio-value">--</div></div>
+        <div class="stat-value neutral" id="portfolio-value">--</div>
+        <div class="stat-sub" id="cash-sub">--</div></div>
+      <div class="stat-card"><div class="stat-label">Available Cash</div>
+        <div class="stat-value neutral" id="available-cash">--</div>
+        <div class="stat-sub" id="cash-pct">--</div></div>
+      <div class="stat-card"><div class="stat-label">Deployed</div>
+        <div class="stat-value neutral" id="deployed">--</div>
+        <div class="stat-sub" id="deployed-pct">--</div></div>
       <div class="stat-card"><div class="stat-label">Total PnL</div>
         <div class="stat-value" id="total-pnl">--</div>
         <div class="stat-sub" id="pct-return">--</div></div>
@@ -276,10 +303,6 @@
       <div class="stat-card"><div class="stat-label">Win Rate</div>
         <div class="stat-value neutral" id="win-rate">--</div>
         <div class="stat-sub" id="total-trades">--</div></div>
-      <div class="stat-card"><div class="stat-label">Deployed</div>
-        <div class="stat-value neutral" id="deployed">--</div></div>
-      <div class="stat-card"><div class="stat-label">Return</div>
-        <div class="stat-value" id="pct-return-card">--</div></div>
     </div>
 
     <!-- ─── Charts ─────────────────────────────────────── -->
@@ -296,37 +319,45 @@
 
     <!-- ─── Open Positions ─────────────────────────────── -->
     <div class="table-card" id="positions-card">
-      <h3>Open Positions</h3>
-      <table>
-        <thead><tr><th>Opened</th><th>Strategy</th><th>Market</th><th>Side</th><th>Invested</th><th>Entry</th><th>Edge</th></tr></thead>
-        <tbody id="positions-tbody"></tbody>
-      </table>
+      <h3>Open Positions <span class="count" id="open-count">0</span></h3>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Opened</th><th>Strategy</th><th>Market</th><th>Side</th><th>Invested</th><th>Entry</th><th>Return%</th><th>Closes In</th></tr></thead>
+          <tbody id="positions-tbody"></tbody>
+        </table>
+      </div>
     </div>
 
     <!-- ─── Closed Positions ───────────────────────────── -->
     <div class="table-card" id="closed-card">
-      <h3>Closed Positions</h3>
-      <table>
-        <thead><tr><th>Closed</th><th>Strategy</th><th>Market</th><th>Result</th><th>P&amp;L</th><th>Reason</th></tr></thead>
-        <tbody id="closed-tbody"></tbody>
-      </table>
+      <h3>Closed Positions <span class="count" id="closed-count">0</span></h3>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Closed</th><th>Strategy</th><th>Market</th><th>Result</th><th>P&amp;L</th><th>Reason</th></tr></thead>
+          <tbody id="closed-tbody"></tbody>
+        </table>
+      </div>
     </div>
 
     <!-- ─── Recent Trades & Strategy ───────────────────── -->
     <div class="tables-row">
       <div class="table-card">
-        <h3>Recent Trades</h3>
-        <table>
-          <thead><tr><th>Time</th><th>Strategy</th><th>Market</th><th>Size</th><th>PnL</th></tr></thead>
-          <tbody id="trades-tbody"></tbody>
-        </table>
+        <h3>Recent Trades <span class="count" id="trades-count">0</span></h3>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Time</th><th>Strategy</th><th>Market</th><th>Size</th><th>PnL</th></tr></thead>
+            <tbody id="trades-tbody"></tbody>
+          </table>
+        </div>
       </div>
       <div class="table-card">
         <h3>Strategy Performance</h3>
-        <table>
-          <thead><tr><th>Strategy</th><th>Trades</th><th>PnL</th><th>Win%</th></tr></thead>
-          <tbody id="strategy-tbody"></tbody>
-        </table>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Strategy</th><th>Trades</th><th>PnL</th><th>Win%</th></tr></thead>
+            <tbody id="strategy-tbody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -348,7 +379,12 @@ function getTheme() {
 }
 function applyTheme(t) {
   document.documentElement.setAttribute('data-theme', t);
-  document.getElementById('theme-btn').textContent = t === 'dark' ? '\u2600\uFE0F' : '\uD83C\uDF19';
+  var moon = document.getElementById('icon-moon');
+  var sun = document.getElementById('icon-sun');
+  if (moon && sun) {
+    moon.style.display = t === 'dark' ? 'none' : 'block';
+    sun.style.display = t === 'dark' ? 'block' : 'none';
+  }
   localStorage.setItem('polybot-theme', t);
 }
 function toggleTheme() {
@@ -384,13 +420,16 @@ function strategyBadge(s) {
     'market_maker': ['badge-arb', 'MM'],
     'cross_platform_arb': ['badge-arb', 'Arb'],
     'general_scanner': ['badge-scanner', 'Scanner'],
+    'momentum_scalper': ['badge-momentum', 'Momentum'],
+    'spread_capture': ['badge-spread', 'Spread'],
   };
   var entry = map[s] || ['', s];
   return '<span class="badge ' + entry[0] + '">' + entry[1] + '</span>';
 }
 function strategyLabel(s) {
   var map = { 'weather_arb': 'Weather', 'market_maker': 'MM',
-              'cross_platform_arb': 'Arb', 'general_scanner': 'Scanner' };
+              'cross_platform_arb': 'Arb', 'general_scanner': 'Scanner',
+              'momentum_scalper': 'Momentum', 'spread_capture': 'Spread' };
   return map[s] || s;
 }
 function statusBadge(st) {
@@ -440,7 +479,7 @@ function chartColors() {
     lineBg: dark ? 'rgba(129,140,248,0.1)' : 'rgba(99,102,241,0.08)',
     grid: dark ? '#2d3044' : '#f0f0f0',
     text: dark ? '#6b7280' : '#9ca3af',
-    pie: ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'],
+    pie: ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'],
   };
 }
 
@@ -452,7 +491,18 @@ function renderDashboard(data) {
   var cc = chartColors();
 
   var s = data.summary;
+  var avail = s.available_cash !== undefined ? s.available_cash : (s.portfolio_value - s.deployed_capital);
+  var deployPct = s.portfolio_value > 0 ? ((s.deployed_capital / s.portfolio_value) * 100).toFixed(0) : 0;
+  var cashPct = s.portfolio_value > 0 ? ((avail / s.portfolio_value) * 100).toFixed(0) : 100;
+
   document.getElementById('portfolio-value').textContent = fmt(s.portfolio_value);
+  document.getElementById('cash-sub').textContent = 'Total (cash + trades)';
+
+  document.getElementById('available-cash').textContent = fmt(avail);
+  document.getElementById('cash-pct').textContent = cashPct + '% of portfolio';
+
+  document.getElementById('deployed').textContent = fmt(s.deployed_capital);
+  document.getElementById('deployed-pct').textContent = deployPct + '% deployed';
 
   var pnlEl = document.getElementById('total-pnl');
   pnlEl.textContent = fmt(s.total_pnl);
@@ -465,11 +515,6 @@ function renderDashboard(data) {
   document.getElementById('pct-return').textContent = (s.pct_return >= 0 ? '+' : '') + s.pct_return + '%';
   document.getElementById('win-rate').textContent = s.win_rate + '%';
   document.getElementById('total-trades').textContent = s.total_trades + ' trades';
-  document.getElementById('deployed').textContent = fmt(s.deployed_capital);
-
-  var pctEl = document.getElementById('pct-return-card');
-  pctEl.textContent = (s.pct_return >= 0 ? '+' : '') + s.pct_return + '%';
-  pctEl.className = 'stat-value ' + (s.pct_return >= 0 ? 'positive' : 'negative');
 
   // ─── Control Panel ───────────────────────────────
   var ctrl = data.control;
@@ -508,13 +553,26 @@ function renderDashboard(data) {
     else { hb.textContent = 'PAPER'; hb.className = 'mode-pill paper'; }
   }
 
-  // Header health
+  // Header health — shows "Bot ran Xm ago" next to PolyBot logo
   var dot = document.getElementById('status-dot');
   var txt = document.getElementById('status-text');
-  if (ctrl && !ctrl.trading_enabled) { dot.className = 'dot halted'; txt.textContent = 'Halted'; }
-  else if (data.health && data.health.bot_active) { dot.className = 'dot live'; txt.textContent = 'Active'; }
-  else if (data.health && data.health.last_trade) { dot.className = 'dot offline'; txt.textContent = timeAgo(data.health.last_trade); }
-  else { dot.className = 'dot offline'; txt.textContent = 'No activity'; }
+  if (ctrl && !ctrl.trading_enabled) {
+    dot.className = 'dot halted'; txt.textContent = 'Halted';
+  } else if (ctrl && ctrl.last_bot_run) {
+    var botMins = Math.round((Date.now() - new Date(ctrl.last_bot_run).getTime()) / 60000);
+    if (botMins < 10) {
+      dot.className = 'dot live';
+      txt.textContent = 'Bot ran ' + timeAgo(ctrl.last_bot_run);
+    } else {
+      dot.className = 'dot offline';
+      txt.textContent = 'Bot ran ' + timeAgo(ctrl.last_bot_run);
+    }
+  } else if (data.health && data.health.last_trade) {
+    dot.className = 'dot offline';
+    txt.textContent = 'Last trade ' + timeAgo(data.health.last_trade);
+  } else {
+    dot.className = 'dot offline'; txt.textContent = 'No activity';
+  }
 
   // ─── Growth Chart ──────────────────────────────────
   var pnlSeries = data.pnl_series || [];
@@ -558,32 +616,37 @@ function renderDashboard(data) {
 
   // ─── Open Positions ────────────────────────────────
   var positions = data.open_positions || [];
+  document.getElementById('open-count').textContent = positions.length;
   var posTb = document.getElementById('positions-tbody');
   if (!positions.length) {
-    posTb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">No open positions</td></tr>';
+    posTb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted)">No open positions</td></tr>';
   } else {
     posTb.innerHTML = positions.map(function(p) {
-      var q = (p.market_question || '').slice(0, 50) + ((p.market_question || '').length > 50 ? '...' : '');
+      var q = (p.market_question || '').slice(0, 45) + ((p.market_question || '').length > 45 ? '...' : '');
+      var returnPct = p.price > 0 ? ((1/p.price - 1) * 100).toFixed(0) + '%' : '--';
+      if (p.side === 'BOTH') returnPct = ((p.edge_pct || 0) * 100).toFixed(1) + '%';
       return '<tr>' +
-        '<td style="color:var(--text-muted)">' + (p.timestamp || '').slice(5, 10) + '</td>' +
+        '<td style="color:var(--text-muted)">' + timeAgo(p.timestamp) + '</td>' +
         '<td>' + strategyBadge(p.strategy) + '</td>' +
         '<td title="' + (p.market_question || '') + '">' + q + '</td>' +
         '<td>' + (p.side || '--') + '</td>' +
         '<td style="color:var(--accent);font-weight:600">' + fmt(p.size_usd) + '</td>' +
         '<td>' + (p.price || 0).toFixed(3) + '</td>' +
-        '<td style="color:var(--green)">' + ((p.edge_pct || 0) * 100).toFixed(1) + '%</td></tr>';
+        '<td style="color:var(--green)">' + returnPct + '</td>' +
+        '<td style="color:var(--text-muted);font-size:0.75rem">--</td></tr>';
     }).join('');
   }
 
   // ─── Closed Positions ──────────────────────────────
   var closed = data.closed_positions || [];
+  document.getElementById('closed-count').textContent = closed.length;
   var closedTb = document.getElementById('closed-tbody');
   if (!closed.length) {
     closedTb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">No closed positions yet</td></tr>';
   } else {
     closedTb.innerHTML = closed.map(function(c) {
       var q = (c.market_question || '').slice(0, 45) + ((c.market_question || '').length > 45 ? '...' : '');
-      var closedAt = c.closed_at ? c.closed_at.slice(5, 16) : '--';
+      var closedAt = c.closed_at ? timeAgo(c.closed_at) : '--';
       var pnlTxt = c.pnl !== null ? '<span class="' + colorClass(c.pnl) + '">' + fmt(c.pnl) + '</span>' : '--';
       var reason = (c.close_reason || '').replace('market_resolved: ', '').slice(0, 20);
       return '<tr>' +
@@ -598,12 +661,13 @@ function renderDashboard(data) {
 
   // ─── Recent Trades ─────────────────────────────────
   var trades = data.trades || [];
+  document.getElementById('trades-count').textContent = trades.length;
   var trTb = document.getElementById('trades-tbody');
   if (!trades.length) {
     trTb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">No trades yet</td></tr>';
   } else {
-    trTb.innerHTML = trades.slice(0, 20).map(function(t) {
-      var time = t.timestamp ? t.timestamp.slice(5, 16) : '--';
+    trTb.innerHTML = trades.map(function(t) {
+      var time = t.timestamp ? timeAgo(t.timestamp) : '--';
       var q = (t.market_question || '').slice(0, 35) + ((t.market_question || '').length > 35 ? '...' : '');
       var pnlTxt = t.pnl !== null ? '<span class="' + colorClass(t.pnl) + '">' + fmt(t.pnl) + '</span>'
                                    : '<span style="color:var(--text-muted)">open</span>';
@@ -617,9 +681,10 @@ function renderDashboard(data) {
     }).join('');
   }
 
+  // Footer timestamp
   if (data.exported_at) {
     document.getElementById('refresh-timer').textContent =
-      'Updated: ' + data.exported_at.slice(0, 19) + ' UTC \u00b7 Auto-refresh 30s';
+      'Bot ran ' + timeAgo(data.exported_at) + ' \u00b7 Auto-refresh 30s';
   }
 }
 

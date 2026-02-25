@@ -434,9 +434,13 @@ class Portfolio:
         total_trades = self._count_trades()
         pct_return = (total_pnl / self.initial_capital * 100) if self.initial_capital > 0 else 0
 
+        # Available cash = total portfolio minus what's locked in open trades
+        available_cash = round(portfolio_val - deployed, 2)
+
         # Summary
         summary = {
             "portfolio_value": round(portfolio_val, 2),
+            "available_cash": available_cash,
             "total_pnl": round(total_pnl, 2),
             "daily_pnl": round(daily_pnl, 2),
             "pct_return": round(pct_return, 2),

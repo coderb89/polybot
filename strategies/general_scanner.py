@@ -1,14 +1,20 @@
 """
 General Market Scanner Strategy
 Scans all active Polymarket markets for mispriced opportunities.
-Looks for markets where the order book mid-price suggests an edge.
-Uses simple momentum and value metrics to generate trades.
+Focuses on SHORT-DURATION markets (closing within hours to 7 days) for quick returns.
+Uses real edge calculation instead of naive fair-value assumptions.
+
+Trade rules:
+- $1 USD per trade
+- Minimum 30% return potential
+- Prefer markets closing within 72 hours
+- Max 10 trades per cycle
 """
 
 import asyncio
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Dict
 
 from core.polymarket_client import PolymarketClient
@@ -19,7 +25,7 @@ logger = logging.getLogger("polybot.scanner")
 
 
 class GeneralScannerStrategy:
-    """Scans Polymarket for any market with a favorable YES/NO price imbalance."""
+    """Scans Polymarket for short-duration markets with high return potential."""
 
     def __init__(self, settings, portfolio: Portfolio, risk_manager: RiskManager):
         self.settings = settings
@@ -30,11 +36,11 @@ class GeneralScannerStrategy:
 
     async def run_once(self):
         """Single scan-and-trade cycle for GitHub Actions."""
-        logger.info("GeneralScanner: scanning active markets")
+        logger.info("GeneralScanner: scanning for SHORT-DURATION high-return markets")
         try:
             opportunities = await self._scan_markets()
             executed = 0
-            for opp in opportunities[:5]:  # Max 5 trades per cycle
+            for opp in opportunities[:10]:  # Max 10 trades per cycle
                 success = await self._execute_trade(opp)
                 if success:
                     executed += 1
@@ -43,7 +49,7 @@ class GeneralScannerStrategy:
             logger.error(f"GeneralScanner error: {e}", exc_info=True)
 
     async def _scan_markets(self) -> List[Dict]:
-        """Fetch markets and find mispriced opportunities."""
+        """Fetch markets and find fast-closing high-return opportunities."""
         markets = await self.poly_client.get_markets(active_only=True)
         logger.info(f"GeneralScanner: analyzing {len(markets)} active markets")
 
@@ -52,8 +58,13 @@ class GeneralScannerStrategy:
         skipped_no_tokens = 0
         skipped_no_book = 0
         skipped_low_liq = 0
+        skipped_too_far = 0
+        skipped_too_close = 0
+        skipped_low_return = 0
 
-        for market in markets[:200]:  # Analyze top 200 markets by volume
+        now = datetime.now(timezone.utc)
+
+        for market in markets[:300]:  # Scan top 300 markets
             condition_id = market.get("condition_id", "")
 
             # Skip markets where we already have an open position (persisted in DB)
@@ -83,16 +94,27 @@ class GeneralScannerStrategy:
                 skipped_no_tokens += 1
                 continue
 
-            # Check resolution time — minimum 12 hours
+            # ═══ CRITICAL: Focus on FAST-CLOSING markets ═══
+            # Priority: < 72 hours (3 days), acceptable: < 7 days
+            # REJECT anything > 14 days — those are long-shot bets
             end_date = market.get("end_date_iso", "")
+            hours_until = None
             if end_date:
                 try:
                     resolution_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
-                    hours_until = (resolution_dt - datetime.now(timezone.utc)).total_seconds() / 3600
-                    if hours_until < 12:
+                    hours_until = (resolution_dt - now).total_seconds() / 3600
+                    if hours_until < 2:  # Too close to expiry (high risk of bad fill)
+                        skipped_too_close += 1
+                        continue
+                    if hours_until > 336:  # > 14 days — skip entirely
+                        skipped_too_far += 1
                         continue
                 except Exception:
                     pass
+            else:
+                # No end date = likely very long-dated, skip
+                skipped_too_far += 1
+                continue
 
             # Get order books for both sides
             analyzed += 1
@@ -106,9 +128,9 @@ class GeneralScannerStrategy:
                 skipped_no_book += 1
                 continue
 
-            # Minimum liquidity check ($25)
+            # Minimum liquidity check ($20)
             min_liquidity = min(yes_book.liquidity_usd, no_book.liquidity_usd)
-            if min_liquidity < 25:
+            if min_liquidity < 20:
                 skipped_low_liq += 1
                 continue
 
@@ -116,10 +138,22 @@ class GeneralScannerStrategy:
             no_mid = no_book.mid_price
             total = yes_mid + no_mid
 
+            # Time urgency bonus: markets closing sooner get priority
+            time_bonus = 0
+            if hours_until and hours_until <= 24:
+                time_bonus = 0.10  # Strong bonus for same-day resolution
+            elif hours_until and hours_until <= 72:
+                time_bonus = 0.05  # Moderate bonus for 3-day resolution
+            elif hours_until and hours_until <= 168:
+                time_bonus = 0.02  # Small bonus for 1-week resolution
+
             # ── Opportunity Type 1: Arbitrage (YES + NO < $1.00) ──
+            # Guaranteed profit on resolution regardless of outcome
             if total < 0.99:
                 arb_edge = 1.0 - total - 0.004  # Subtract ~0.4% fees
                 if arb_edge > 0.003:  # > 0.3% edge
+                    # Calculate annualized return for ranking
+                    return_pct = arb_edge / total * 100  # % return
                     opportunities.append({
                         "type": "arb",
                         "condition_id": condition_id,
@@ -129,77 +163,96 @@ class GeneralScannerStrategy:
                         "yes_price": yes_mid,
                         "no_price": no_mid,
                         "edge": arb_edge,
+                        "return_pct": return_pct,
                         "liquidity": min_liquidity,
                         "side": "BOTH",
+                        "hours_until": hours_until,
+                        "score": return_pct + time_bonus * 100,  # Prioritize quick closers
                     })
                     continue
 
-            # ── Opportunity Type 2: Value bet (strong lean on one side) ──
-            # Buy the cheap side when one outcome is priced between 5¢-45¢
-            # with tight spread. Avoid penny stocks (< 5¢) as they're almost
-            # always losers despite seeming "high edge".
+            # ── Opportunity Type 2: High-conviction value bets ──
+            # ONLY trade when:
+            # - Token price implies >= 30% potential return on resolution
+            # - Market closes within 7 days (prefer < 72h)
+            # - Spread is tight (market is active)
             spread = yes_book.spread
 
-            if 0.05 <= yes_mid <= 0.50 and spread < 0.12 and min_liquidity > 30:
-                # Cheap YES — potential value
-                edge = 0.50 - yes_mid  # Implied edge to fair value
-                if edge > 0.02:
-                    opportunities.append({
-                        "type": "value",
-                        "condition_id": condition_id,
-                        "question": market.get("question", ""),
-                        "yes_token_id": yes_id,
-                        "no_token_id": no_id,
-                        "yes_price": yes_mid,
-                        "no_price": no_mid,
-                        "edge": edge,
-                        "liquidity": min_liquidity,
-                        "side": "BUY_YES",
-                    })
-            elif 0.05 <= no_mid <= 0.50 and spread < 0.12 and min_liquidity > 30:
-                edge = 0.50 - no_mid
-                if edge > 0.02:
-                    opportunities.append({
-                        "type": "value",
-                        "condition_id": condition_id,
-                        "question": market.get("question", ""),
-                        "yes_token_id": yes_id,
-                        "no_token_id": no_id,
-                        "yes_price": yes_mid,
-                        "no_price": no_mid,
-                        "edge": edge,
-                        "liquidity": min_liquidity,
-                        "side": "BUY_NO",
-                    })
+            # For $1 trade at price P, if we win: payout = $1/P tokens * $1 = $1/P
+            # Return = ($1/P - $1) / $1 = (1/P) - 1
+            # For 30% return: need price <= 1/1.30 ≈ 0.77
+            # But we also need actual conviction — not just cheap tokens
+
+            # Buy YES side: cheap YES that's likely to happen soon
+            if 0.10 <= yes_mid <= 0.77 and spread < 0.10:
+                potential_return = (1.0 / yes_mid - 1.0) * 100  # % return if YES wins
+                if potential_return >= 30 and min_liquidity > 25:
+                    # Prefer markets where YES is >30% likely (not longshots)
+                    # and closing within 7 days
+                    if hours_until and hours_until <= 168:
+                        opportunities.append({
+                            "type": "value",
+                            "condition_id": condition_id,
+                            "question": market.get("question", ""),
+                            "yes_token_id": yes_id,
+                            "no_token_id": no_id,
+                            "yes_price": yes_mid,
+                            "no_price": no_mid,
+                            "edge": potential_return / 100,
+                            "return_pct": potential_return,
+                            "liquidity": min_liquidity,
+                            "side": "BUY_YES",
+                            "hours_until": hours_until,
+                            "score": potential_return * (1 + time_bonus) * min(1.0, min_liquidity / 100),
+                        })
+
+            # Buy NO side: cheap NO that's likely to happen soon
+            elif 0.10 <= no_mid <= 0.77 and spread < 0.10:
+                potential_return = (1.0 / no_mid - 1.0) * 100
+                if potential_return >= 30 and min_liquidity > 25:
+                    if hours_until and hours_until <= 168:
+                        opportunities.append({
+                            "type": "value",
+                            "condition_id": condition_id,
+                            "question": market.get("question", ""),
+                            "yes_token_id": yes_id,
+                            "no_token_id": no_id,
+                            "yes_price": yes_mid,
+                            "no_price": no_mid,
+                            "edge": potential_return / 100,
+                            "return_pct": potential_return,
+                            "liquidity": min_liquidity,
+                            "side": "BUY_NO",
+                            "hours_until": hours_until,
+                            "score": potential_return * (1 + time_bonus) * min(1.0, min_liquidity / 100),
+                        })
 
             # Rate limit: don't hammer the API
             if analyzed % 10 == 0:
                 await asyncio.sleep(0.3)
 
         logger.info(f"GeneralScanner stats: analyzed={analyzed}, no_tokens={skipped_no_tokens}, "
-                   f"no_book={skipped_no_book}, low_liq={skipped_low_liq}")
-        opportunities.sort(key=lambda x: x["edge"], reverse=True)
+                   f"no_book={skipped_no_book}, low_liq={skipped_low_liq}, "
+                   f"too_far={skipped_too_far}, too_close={skipped_too_close}, low_return={skipped_low_return}")
+
+        # Sort by score (combines return + time urgency + liquidity)
+        opportunities.sort(key=lambda x: x["score"], reverse=True)
+
         if opportunities:
-            logger.info(f"GeneralScanner: {len(opportunities)} opportunities, best edge: {opportunities[0]['edge']:.2%}")
+            best = opportunities[0]
+            logger.info(f"GeneralScanner: {len(opportunities)} opportunities | "
+                       f"Best: {best['type']} {best['return_pct']:.1f}% return, "
+                       f"closes in {best.get('hours_until', '?'):.0f}h")
         else:
             logger.info("GeneralScanner: no opportunities found this cycle")
         return opportunities
 
     async def _execute_trade(self, opp: Dict) -> bool:
-        """Execute a paper/live trade for an opportunity."""
-        portfolio_val = self.portfolio.get_portfolio_value()
+        """Execute a paper/live trade for an opportunity. Fixed $1 per trade."""
+        # Fixed trade size: $1 USD per trade
+        trade_size = 1.00
 
-        # Position sizing: max 5% of portfolio or $5, whichever is smaller
-        max_size = min(
-            portfolio_val * 0.05,
-            5.0,
-            opp["liquidity"] * 0.05  # Don't take more than 5% of liquidity
-        )
-
-        if max_size < 0.50:
-            return False
-
-        approved, reason = self.risk_manager.approve_trade(max_size, "general_scanner", opp["condition_id"])
+        approved, reason = self.risk_manager.approve_trade(trade_size, "general_scanner", opp["condition_id"])
         if not approved:
             logger.debug(f"Trade rejected: {reason}")
             return False
@@ -209,30 +262,30 @@ class GeneralScannerStrategy:
             logger.info(
                 f"[SCANNER] ARB | {opp['question'][:55]} | "
                 f"YES: {opp['yes_price']:.3f} + NO: {opp['no_price']:.3f} = {(opp['yes_price']+opp['no_price']):.3f} | "
-                f"Edge: {opp['edge']:.2%} | Size: ${max_size:.2f}"
+                f"Return: {opp['return_pct']:.1f}% | Closes: {opp.get('hours_until', '?'):.0f}h | Size: ${trade_size:.2f}"
             )
-            half_size = max_size / 2
+            half_size = trade_size / 2
             yes_result = await self.poly_client.place_market_order(
                 opp["yes_token_id"], half_size, "BUY", self.settings.DRY_RUN)
             no_result = await self.poly_client.place_market_order(
                 opp["no_token_id"], half_size, "BUY", self.settings.DRY_RUN)
 
             if yes_result.success and no_result.success:
-                expected_pnl = max_size * opp["edge"]
+                expected_pnl = trade_size * opp["edge"]
                 trade = Trade(
                     id=None, timestamp=datetime.utcnow().isoformat(),
                     strategy="general_scanner", market_id=opp["condition_id"],
                     market_question=opp["question"], side="BOTH",
                     token_id=f"{opp['yes_token_id'][:16]}|{opp['no_token_id'][:16]}",
                     price=(opp["yes_price"] + opp["no_price"]),
-                    size_usd=max_size, edge_pct=opp["edge"],
+                    size_usd=trade_size, edge_pct=opp["edge"],
                     dry_run=self.settings.DRY_RUN,
                     order_id=f"{yes_result.order_id}|{no_result.order_id}",
                     pnl=expected_pnl, status="open"
                 )
                 self.portfolio.log_trade(trade)
                 self.traded_markets[opp["condition_id"]] = time.time()
-                logger.info(f"ARB executed! Expected PnL: ${expected_pnl:.4f}")
+                logger.info(f"ARB executed! Expected return: {opp['return_pct']:.1f}%, closes in {opp.get('hours_until', '?'):.0f}h")
                 return True
 
         elif opp["type"] == "value":
@@ -242,11 +295,12 @@ class GeneralScannerStrategy:
 
             logger.info(
                 f"[SCANNER] VALUE | {opp['question'][:55]} | "
-                f"{side} @ {price:.3f} | Edge: {opp['edge']:.2%} | Size: ${max_size:.2f}"
+                f"{side} @ {price:.3f} | Return potential: {opp['return_pct']:.0f}% | "
+                f"Closes: {opp.get('hours_until', '?'):.0f}h | Size: ${trade_size:.2f}"
             )
 
             result = await self.poly_client.place_market_order(
-                token_id, max_size, "BUY", self.settings.DRY_RUN)
+                token_id, trade_size, "BUY", self.settings.DRY_RUN)
 
             if result.success:
                 trade = Trade(
@@ -254,14 +308,14 @@ class GeneralScannerStrategy:
                     strategy="general_scanner", market_id=opp["condition_id"],
                     market_question=opp["question"], side=side,
                     token_id=token_id,
-                    price=price, size_usd=max_size, edge_pct=opp["edge"],
+                    price=price, size_usd=trade_size, edge_pct=opp["edge"],
                     dry_run=self.settings.DRY_RUN,
                     order_id=result.order_id,
                     pnl=None, status="open"
                 )
                 self.portfolio.log_trade(trade)
                 self.traded_markets[opp["condition_id"]] = time.time()
-                logger.info(f"VALUE trade placed: ${max_size:.2f}")
+                logger.info(f"VALUE trade placed: ${trade_size:.2f} | {opp['return_pct']:.0f}% potential | closes {opp.get('hours_until', '?'):.0f}h")
                 return True
 
         return False
