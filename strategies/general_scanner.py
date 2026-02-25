@@ -94,27 +94,24 @@ class GeneralScannerStrategy:
                 skipped_no_tokens += 1
                 continue
 
-            # ═══ CRITICAL: Focus on FAST-CLOSING markets ═══
-            # Priority: < 72 hours (3 days), acceptable: < 7 days
-            # REJECT anything > 14 days — those are long-shot bets
+            # ═══ Focus on markets with reasonable resolution windows ═══
+            # Prefer short-duration but allow up to 30 days
+            # Skip > 90 days and no-end-date (super long-dated)
             end_date = market.get("end_date_iso", "")
             hours_until = None
             if end_date:
                 try:
                     resolution_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
                     hours_until = (resolution_dt - now).total_seconds() / 3600
-                    if hours_until < 2:  # Too close to expiry (high risk of bad fill)
+                    if hours_until < 2:  # Too close to expiry
                         skipped_too_close += 1
                         continue
-                    if hours_until > 336:  # > 14 days — skip entirely
+                    if hours_until > 2160:  # > 90 days — skip
                         skipped_too_far += 1
                         continue
                 except Exception:
                     pass
-            else:
-                # No end date = likely very long-dated, skip
-                skipped_too_far += 1
-                continue
+            # Markets without end dates still get scanned but at lower priority
 
             # Get order books for both sides
             analyzed += 1
@@ -183,49 +180,45 @@ class GeneralScannerStrategy:
             # For 30% return: need price <= 1/1.30 ≈ 0.77
             # But we also need actual conviction — not just cheap tokens
 
-            # Buy YES side: cheap YES that's likely to happen soon
-            if 0.10 <= yes_mid <= 0.77 and spread < 0.10:
+            # Buy YES side: value opportunity
+            if 0.05 <= yes_mid <= 0.77 and spread < 0.12:
                 potential_return = (1.0 / yes_mid - 1.0) * 100  # % return if YES wins
-                if potential_return >= 30 and min_liquidity > 25:
-                    # Prefer markets where YES is >30% likely (not longshots)
-                    # and closing within 7 days
-                    if hours_until and hours_until <= 168:
-                        opportunities.append({
-                            "type": "value",
-                            "condition_id": condition_id,
-                            "question": market.get("question", ""),
-                            "yes_token_id": yes_id,
-                            "no_token_id": no_id,
-                            "yes_price": yes_mid,
-                            "no_price": no_mid,
-                            "edge": potential_return / 100,
-                            "return_pct": potential_return,
-                            "liquidity": min_liquidity,
-                            "side": "BUY_YES",
-                            "hours_until": hours_until,
-                            "score": potential_return * (1 + time_bonus) * min(1.0, min_liquidity / 100),
-                        })
+                if potential_return >= 30 and min_liquidity > 20:
+                    opportunities.append({
+                        "type": "value",
+                        "condition_id": condition_id,
+                        "question": market.get("question", ""),
+                        "yes_token_id": yes_id,
+                        "no_token_id": no_id,
+                        "yes_price": yes_mid,
+                        "no_price": no_mid,
+                        "edge": potential_return / 100,
+                        "return_pct": potential_return,
+                        "liquidity": min_liquidity,
+                        "side": "BUY_YES",
+                        "hours_until": hours_until,
+                        "score": potential_return * (1 + time_bonus) * min(1.0, min_liquidity / 100),
+                    })
 
-            # Buy NO side: cheap NO that's likely to happen soon
-            elif 0.10 <= no_mid <= 0.77 and spread < 0.10:
+            # Buy NO side: value opportunity
+            elif 0.05 <= no_mid <= 0.77 and spread < 0.12:
                 potential_return = (1.0 / no_mid - 1.0) * 100
-                if potential_return >= 30 and min_liquidity > 25:
-                    if hours_until and hours_until <= 168:
-                        opportunities.append({
-                            "type": "value",
-                            "condition_id": condition_id,
-                            "question": market.get("question", ""),
-                            "yes_token_id": yes_id,
-                            "no_token_id": no_id,
-                            "yes_price": yes_mid,
-                            "no_price": no_mid,
-                            "edge": potential_return / 100,
-                            "return_pct": potential_return,
-                            "liquidity": min_liquidity,
-                            "side": "BUY_NO",
-                            "hours_until": hours_until,
-                            "score": potential_return * (1 + time_bonus) * min(1.0, min_liquidity / 100),
-                        })
+                if potential_return >= 30 and min_liquidity > 20:
+                    opportunities.append({
+                        "type": "value",
+                        "condition_id": condition_id,
+                        "question": market.get("question", ""),
+                        "yes_token_id": yes_id,
+                        "no_token_id": no_id,
+                        "yes_price": yes_mid,
+                        "no_price": no_mid,
+                        "edge": potential_return / 100,
+                        "return_pct": potential_return,
+                        "liquidity": min_liquidity,
+                        "side": "BUY_NO",
+                        "hours_until": hours_until,
+                        "score": potential_return * (1 + time_bonus) * min(1.0, min_liquidity / 100),
+                    })
 
             # Rate limit: don't hammer the API
             if analyzed % 10 == 0:

@@ -83,15 +83,15 @@ class MomentumScalperStrategy:
             if not yes_id or not no_id:
                 continue
 
-            # Only markets closing within 48 hours
-            end_date = market.get("end_date_iso", "")
+            # Focus on markets closing within 7 days (168 hours)
+            end_date = market.get("end_date_iso", market.get("endDateIso", ""))
             if not end_date:
                 continue
 
             try:
                 resolution_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
                 hours_until = (resolution_dt - now).total_seconds() / 3600
-                if hours_until < 1 or hours_until > 48:
+                if hours_until < 1 or hours_until > 168:
                     continue
             except Exception:
                 continue
@@ -133,11 +133,9 @@ class MomentumScalperStrategy:
                     })
                     continue
 
-            # ── Type 2: High-conviction near-binary play ──
-            # If YES is 85%+ and NO is still > 3¢, buy YES (it's almost certainly winning)
-            # Quick profit when market resolves in hours
-            if yes_mid >= 0.85 and no_mid > 0.03 and hours_until <= 24:
-                # Buy YES: almost certain winner
+            # ── Type 2: High-conviction play ──
+            # If one side is 75%+ (strong favorite), buy it for quick reliable return
+            if yes_mid >= 0.75 and no_mid > 0.02:
                 return_if_win = (1.0 / yes_mid - 1.0) * 100
                 if return_if_win >= 1.0:  # At least 1% return
                     opportunities.append({
@@ -153,10 +151,10 @@ class MomentumScalperStrategy:
                         "hours_until": hours_until,
                         "liquidity": min_liq,
                         "side": "BUY_YES",
-                        "score": return_if_win * (24 / max(hours_until, 1)),
+                        "score": return_if_win * (168 / max(hours_until, 1)),
                     })
 
-            elif no_mid >= 0.85 and yes_mid > 0.03 and hours_until <= 24:
+            elif no_mid >= 0.75 and yes_mid > 0.02:
                 return_if_win = (1.0 / no_mid - 1.0) * 100
                 if return_if_win >= 1.0:
                     opportunities.append({
@@ -172,13 +170,13 @@ class MomentumScalperStrategy:
                         "hours_until": hours_until,
                         "liquidity": min_liq,
                         "side": "BUY_NO",
-                        "score": return_if_win * (24 / max(hours_until, 1)),
+                        "score": return_if_win * (168 / max(hours_until, 1)),
                     })
 
-            # ── Type 3: Mispriced near-expiry value ──
-            # Markets closing in <12h where one side is 20-70¢ — big payout if right
-            if hours_until <= 12:
-                if 0.20 <= yes_mid <= 0.70 and yes_book.spread < 0.08:
+            # ── Type 3: Value near-expiry ──
+            # Markets closing in <72h where one side is 20-70¢
+            if hours_until <= 72:
+                if 0.15 <= yes_mid <= 0.70 and yes_book.spread < 0.10:
                     return_pct = (1.0 / yes_mid - 1.0) * 100
                     if return_pct >= 30:
                         opportunities.append({
@@ -194,9 +192,9 @@ class MomentumScalperStrategy:
                             "hours_until": hours_until,
                             "liquidity": min_liq,
                             "side": "BUY_YES",
-                            "score": return_pct * 2,  # Extra score for imminent resolution
+                            "score": return_pct * 2,
                         })
-                elif 0.20 <= no_mid <= 0.70 and no_book.spread < 0.08:
+                elif 0.15 <= no_mid <= 0.70 and no_book.spread < 0.10:
                     return_pct = (1.0 / no_mid - 1.0) * 100
                     if return_pct >= 30:
                         opportunities.append({

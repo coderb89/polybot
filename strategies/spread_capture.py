@@ -116,23 +116,36 @@ class SpreadCaptureStrategy:
             if not yes_id or not no_id:
                 continue
 
-            # Use the price from Gamma (faster than order book)
-            yes_price = float(yes_token.get("price", 0))
-            no_price = float(no_token.get("price", 0))
+            # Try multiple price fields from Gamma API
+            yes_price = float(yes_token.get("price", 0) or 0)
+            no_price = float(no_token.get("price", 0) or 0)
 
-            if yes_price <= 0 or no_price <= 0:
+            # Also try outcomePrices at market level
+            if (yes_price <= 0 or no_price <= 0):
+                outcome_prices = market.get("outcomePrices", "")
+                if outcome_prices and isinstance(outcome_prices, str):
+                    try:
+                        import json
+                        prices = json.loads(outcome_prices)
+                        if len(prices) >= 2:
+                            yes_price = float(prices[0])
+                            no_price = float(prices[1])
+                    except Exception:
+                        pass
+
+            if yes_price <= 0.01 or no_price <= 0.01:
                 continue
 
             total = yes_price + no_price
 
             # We want total < 1.0 (spread exists)
-            if total >= 0.995:
+            if total >= 0.998:
                 continue
 
             spread_profit = 1.0 - total
             net_profit = spread_profit - 0.004  # ~0.4% fees both sides
 
-            if net_profit < 0.005:  # Minimum 0.5% guaranteed return
+            if net_profit < 0.003:  # Minimum 0.3% guaranteed return
                 continue
 
             return_pct = net_profit / total * 100
