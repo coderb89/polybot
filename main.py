@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
 PolyBot - Polymarket Multi-Strategy Trading Bot
-Strategies: Weather Arbitrage | Cross-Platform Arbitrage
+
+Strategies: WeatherArb | CrossPlatformArb | GeneralScanner | MomentumScalper
+            SpreadCapture | SportsIntel + ProfitTaker (active sell/stop-loss)
+
+Arb trades: $3/trade (guaranteed profit) | Value trades: $1/trade
 Starting capital: $100 USDC on Polygon
 
 Runs as a single scan-and-trade cycle (designed for GitHub Actions cron).
@@ -27,6 +31,7 @@ from strategies.general_scanner import GeneralScannerStrategy
 from strategies.momentum_scalper import MomentumScalperStrategy
 from strategies.spread_capture import SpreadCaptureStrategy
 from strategies.sports_intel import SportsIntelStrategy
+from strategies.profit_taker import ProfitTakerStrategy
 from utils.logger import setup_logger
 from utils.telegram_alerts import TelegramAlerter
 
@@ -155,6 +160,9 @@ class PolyBot:
             self.risk_manager._halt_trading(reason)
             logger.critical(f"TRADING HALTED by control file: {reason}")
 
+        # Profit taker runs BEFORE strategies to close profitable positions
+        self.profit_taker = ProfitTakerStrategy(self.settings, self.portfolio, self.risk_manager)
+
         self.strategies = []
         if self.settings.ENABLE_WEATHER_ARB:
             self.strategies.append(WeatherArbStrategy(self.settings, self.portfolio, self.risk_manager))
@@ -211,6 +219,16 @@ class PolyBot:
             await self.portfolio.resolve_positions()
         except Exception as e:
             logger.error(f"Position resolution failed: {e}", exc_info=True)
+
+        # ── PROFIT TAKING: Check open positions and sell for profit ──
+        # This runs BEFORE new trades to:
+        # 1. Realize profits on positions that moved up 25%+
+        # 2. Cut losses on positions that dropped 50%+
+        # 3. Free up capital locked in stale positions
+        try:
+            await self.profit_taker.run_once()
+        except Exception as e:
+            logger.error(f"Profit taker failed: {e}", exc_info=True)
 
         # Run each strategy's single scan
         for strategy in self.strategies:
@@ -270,6 +288,7 @@ class PolyBot:
         # Cleanup strategies
         for strategy in self.strategies:
             await strategy.cleanup()
+        await self.profit_taker.cleanup()
 
 
 def main():

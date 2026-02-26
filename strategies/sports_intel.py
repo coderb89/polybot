@@ -121,7 +121,12 @@ class SportsIntelStrategy:
             logger.error(f"SportsIntel error: {e}", exc_info=True)
 
     async def _find_sports_markets(self) -> List[Dict]:
-        """Find active Polymarket markets related to sports."""
+        """Find active Polymarket markets related to sports.
+
+        IMPORTANT: Only returns markets resolving within 30 days.
+        Long-dated futures (World Cup, Stanley Cup months away) tie up capital
+        for too long and produce zero PnL.
+        """
         # Search with multiple sports terms
         all_markets = []
         search_terms = ["NBA", "NFL", "soccer", "UFC", "tennis", "MLB",
@@ -157,13 +162,43 @@ class SportsIntelStrategy:
         except Exception as e:
             logger.debug(f"Tag search failed: {e}")
 
-        # Filter to active sports markets only
+        # Filter to active sports markets ONLY within 30 days of resolution
+        now = datetime.now(timezone.utc)
         sports = []
+        skipped_long = 0
+        skipped_no_date = 0
+
         for m in all_markets:
             question = (m.get("question", "") or "").lower()
             # Must contain at least one sports keyword
-            if any(kw in question for kw in SPORTS_KEYWORDS):
-                sports.append(m)
+            if not any(kw in question for kw in SPORTS_KEYWORDS):
+                continue
+
+            # CRITICAL: Require end_date and reject markets > 30 days out
+            end_date = m.get("end_date_iso", m.get("endDateIso", ""))
+            if not end_date:
+                skipped_no_date += 1
+                continue
+
+            try:
+                resolution_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+                hours_until = (resolution_dt - now).total_seconds() / 3600
+                if hours_until < 2:  # Too close to expiry
+                    continue
+                if hours_until > 720:  # > 30 days — SKIP (was the major problem)
+                    skipped_long += 1
+                    continue
+                m["_hours_until"] = hours_until
+            except Exception:
+                skipped_no_date += 1
+                continue
+
+            sports.append(m)
+
+        if skipped_long > 0:
+            logger.info(f"SportsIntel: skipped {skipped_long} long-dated markets (>30 days)")
+        if skipped_no_date > 0:
+            logger.info(f"SportsIntel: skipped {skipped_no_date} markets with no end date")
 
         return sports
 
@@ -329,12 +364,17 @@ class SportsIntelStrategy:
                     opportunities.append(opp)
             else:
                 # Even without external odds, apply sports-specific heuristics
-                # Arb check: YES + NO < $1
+                # Get hours_until from our pre-filtered data
+                hours_until = market.get("_hours_until")
+
+                # Arb check: YES + NO < $1 (guaranteed profit — priority!)
                 total = yes_mid + no_mid
                 if total < 0.995:
                     edge = 1.0 - total - 0.004
                     if edge > 0.003:
                         return_pct = edge / total * 100
+                        # Arb trades get 3x score boost for priority
+                        time_mult = 3.0 if (hours_until and hours_until <= 72) else 2.0
                         opportunities.append({
                             "type": "sports_arb",
                             "condition_id": condition_id,
@@ -347,47 +387,52 @@ class SportsIntelStrategy:
                             "return_pct": return_pct,
                             "side": "BOTH",
                             "liquidity": min_liq,
-                            "score": return_pct * 1.5,  # Sports arb = premium
+                            "hours_until": hours_until,
+                            "score": return_pct * time_mult,  # Sports arb = premium
                             "source": "polymarket_internal",
                         })
 
-                # Value bet: cheap side with sports liquidity
-                if 0.10 <= yes_mid <= 0.65 and min_liq > 50 and yes_book.spread < 0.08:
-                    return_pct = (1.0 / yes_mid - 1.0) * 100
-                    if return_pct >= 30:
-                        opportunities.append({
-                            "type": "sports_value",
-                            "condition_id": condition_id,
-                            "question": question,
-                            "yes_token_id": yes_id,
-                            "no_token_id": no_id,
-                            "yes_price": yes_mid,
-                            "no_price": no_mid,
-                            "edge": return_pct / 100,
-                            "return_pct": return_pct,
-                            "side": "BUY_YES",
-                            "liquidity": min_liq,
-                            "score": return_pct * min(1.0, min_liq / 200),
-                            "source": "polymarket_analysis",
-                        })
-                elif 0.10 <= no_mid <= 0.65 and min_liq > 50 and no_book.spread < 0.08:
-                    return_pct = (1.0 / no_mid - 1.0) * 100
-                    if return_pct >= 30:
-                        opportunities.append({
-                            "type": "sports_value",
-                            "condition_id": condition_id,
-                            "question": question,
-                            "yes_token_id": yes_id,
-                            "no_token_id": no_id,
-                            "yes_price": yes_mid,
-                            "no_price": no_mid,
-                            "edge": return_pct / 100,
-                            "return_pct": return_pct,
-                            "side": "BUY_NO",
-                            "liquidity": min_liq,
-                            "score": return_pct * min(1.0, min_liq / 200),
-                            "source": "polymarket_analysis",
-                        })
+                # Value bets: ONLY when hours_until is known and < 30 days
+                # (already filtered in _find_sports_markets, but double-check)
+                if hours_until and hours_until <= 720:
+                    if 0.10 <= yes_mid <= 0.65 and min_liq > 50 and yes_book.spread < 0.08:
+                        return_pct = (1.0 / yes_mid - 1.0) * 100
+                        if return_pct >= 30:
+                            opportunities.append({
+                                "type": "sports_value",
+                                "condition_id": condition_id,
+                                "question": question,
+                                "yes_token_id": yes_id,
+                                "no_token_id": no_id,
+                                "yes_price": yes_mid,
+                                "no_price": no_mid,
+                                "edge": return_pct / 100,
+                                "return_pct": return_pct,
+                                "side": "BUY_YES",
+                                "liquidity": min_liq,
+                                "hours_until": hours_until,
+                                "score": return_pct * min(1.0, min_liq / 200),
+                                "source": "polymarket_analysis",
+                            })
+                    elif 0.10 <= no_mid <= 0.65 and min_liq > 50 and no_book.spread < 0.08:
+                        return_pct = (1.0 / no_mid - 1.0) * 100
+                        if return_pct >= 30:
+                            opportunities.append({
+                                "type": "sports_value",
+                                "condition_id": condition_id,
+                                "question": question,
+                                "yes_token_id": yes_id,
+                                "no_token_id": no_id,
+                                "yes_price": yes_mid,
+                                "no_price": no_mid,
+                                "edge": return_pct / 100,
+                                "return_pct": return_pct,
+                                "side": "BUY_NO",
+                                "liquidity": min_liq,
+                                "hours_until": hours_until,
+                                "score": return_pct * min(1.0, min_liq / 200),
+                                "source": "polymarket_analysis",
+                            })
 
             await asyncio.sleep(0.2)
 
@@ -482,8 +527,8 @@ class SportsIntelStrategy:
         return None
 
     async def _execute_trade(self, opp: Dict) -> bool:
-        """Execute a sports trade. $1 per trade."""
-        trade_size = 1.00
+        """Execute a sports trade. Arbs: $3, Value: $1."""
+        trade_size = 3.00 if opp["side"] == "BOTH" else 1.00  # Arbs get higher size
 
         approved, reason = self.risk_manager.approve_trade(
             trade_size, "sports_intel", opp["condition_id"])

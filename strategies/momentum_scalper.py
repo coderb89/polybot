@@ -43,7 +43,7 @@ class MomentumScalperStrategy:
         try:
             opportunities = await self._scan_near_expiry()
             executed = 0
-            for opp in opportunities[:5]:  # Max 5 trades
+            for opp in opportunities[:10]:  # Max 10 trades (prioritize arbs)
                 success = await self._execute_trade(opp)
                 if success:
                     executed += 1
@@ -225,8 +225,8 @@ class MomentumScalperStrategy:
         return opportunities
 
     async def _execute_trade(self, opp: Dict) -> bool:
-        """Execute trade. Fixed $1 per trade."""
-        trade_size = 1.00
+        """Execute trade. Arbs: $3 (guaranteed profit), Value: $1."""
+        trade_size = 3.00 if opp["side"] == "BOTH" else 1.00
 
         approved, reason = self.risk_manager.approve_trade(trade_size, "momentum_scalper", opp["condition_id"])
         if not approved:

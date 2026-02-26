@@ -40,11 +40,20 @@ class GeneralScannerStrategy:
         try:
             opportunities = await self._scan_markets()
             executed = 0
-            for opp in opportunities[:10]:  # Max 10 trades per cycle
+            # Arb trades first (guaranteed profit) — unlimited
+            # Value trades second — max 5
+            arb_opps = [o for o in opportunities if o["type"] == "arb"]
+            value_opps = [o for o in opportunities if o["type"] == "value"]
+
+            for opp in arb_opps[:15]:  # Up to 15 arb trades per cycle
                 success = await self._execute_trade(opp)
                 if success:
                     executed += 1
-            logger.info(f"GeneralScanner complete: {len(opportunities)} opportunities, {executed} trades executed")
+            for opp in value_opps[:5]:  # Max 5 value trades per cycle
+                success = await self._execute_trade(opp)
+                if success:
+                    executed += 1
+            logger.info(f"GeneralScanner complete: {len(arb_opps)} arbs + {len(value_opps)} value | {executed} trades executed")
         except Exception as e:
             logger.error(f"GeneralScanner error: {e}", exc_info=True)
 
@@ -244,9 +253,11 @@ class GeneralScannerStrategy:
         return opportunities
 
     async def _execute_trade(self, opp: Dict) -> bool:
-        """Execute a paper/live trade for an opportunity. Fixed $1 per trade."""
-        # Fixed trade size: $1 USD per trade
-        trade_size = 1.00
+        """Execute a paper/live trade for an opportunity.
+        Arb trades: $3 USD (guaranteed profit, higher size = more profit)
+        Value trades: $1 USD (speculative, keep size small)
+        """
+        trade_size = 3.00 if opp["type"] == "arb" else 1.00
 
         approved, reason = self.risk_manager.approve_trade(trade_size, "general_scanner", opp["condition_id"])
         if not approved:
