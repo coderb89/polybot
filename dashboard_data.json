@@ -1,0 +1,166 @@
+{
+  "summary": {
+    "portfolio_value": 23.25,
+    "available_cash": 14.25,
+    "total_pnl": 0.09,
+    "daily_pnl": 0.09,
+    "pct_return": 0.37,
+    "deployed_capital": 9.0,
+    "win_rate": 100.0,
+    "total_trades": 3,
+    "initial_capital": 23.16
+  },
+  "wallet": {
+    "matic": 0.0,
+    "usdc": 0.0,
+    "polymarket_cash": 0.0,
+    "address": "0xD65EeE836ca7bC1a80F87bF4bF48eA4018380BF2"
+  },
+  "trades": [
+    {
+      "id": 3,
+      "timestamp": "2026-03-01T11:17:10.775622+00:00",
+      "strategy": "cross_platform_arb",
+      "market_id": "0xbb4d51e6364066d92eb6f9b8413dd7193de70966736044463b205834805a1f3b",
+      "market_question": "Will the Iranian regime fall before 2027?",
+      "side": "BOTH",
+      "token_id": "10991849228756847439673778874175365458450913336396982752046655649803657501964|106181075047366745139197108801635573283215248045056329679360376976893016488727",
+      "price": 0.98,
+      "size_usd": 3.0,
+      "edge_pct": 0.018367346938775526,
+      "dry_run": 1,
+      "order_id": "dry_run_mkt_1772363830|dry_run_mkt_1772363830",
+      "pnl": 0.027551020408163287,
+      "status": "open",
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "id": 2,
+      "timestamp": "2026-03-01T11:17:10.773332+00:00",
+      "strategy": "cross_platform_arb",
+      "market_id": "0x561cd8d035bac38ed04e23d7882a126da38d7ead9d6679f722ad62c0c9d54ad2",
+      "market_question": "Will Iran close the Strait of Hormuz by March 31?",
+      "side": "BOTH",
+      "token_id": "11259214629259962188961658360673801608680858594287954976598964541495296876564|50005952796518586292778222685298750447930027597009327781466731324939399757427",
+      "price": 0.98,
+      "size_usd": 3.0,
+      "edge_pct": 0.018367346938775526,
+      "dry_run": 1,
+      "order_id": "dry_run_mkt_1772363830|dry_run_mkt_1772363830",
+      "pnl": 0.027551020408163287,
+      "status": "open",
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "id": 1,
+      "timestamp": "2026-03-01T11:17:10.770200+00:00",
+      "strategy": "cross_platform_arb",
+      "market_id": "0x4b7cd1050a0c87baebe5e6008260d14b2a9d6d705cf7e7daac1be94ad5253b27",
+      "market_question": "US strikes Iraq by February 28?",
+      "side": "BOTH",
+      "token_id": "45900834520961763856469490579496577263935972652383164286919801069052546628321|76868450041854708983824610815381724379859101558744120758232956444363922685321",
+      "price": 0.978,
+      "size_usd": 3.0,
+      "edge_pct": 0.020449897750511266,
+      "dry_run": 1,
+      "order_id": "dry_run_mkt_1772363830|dry_run_mkt_1772363830",
+      "pnl": 0.0306748466257669,
+      "status": "open",
+      "closed_at": null,
+      "close_reason": null
+    }
+  ],
+  "pnl_series": [
+    {
+      "day": "2026-03-01",
+      "daily_pnl": 0.0858,
+      "portfolio_value": 23.25,
+      "trade_count": 3
+    }
+  ],
+  "strategy_breakdown": [
+    {
+      "strategy": "cross_platform_arb",
+      "total_trades": 3,
+      "total_pnl": 0.08577688744209347,
+      "avg_pnl": 0.028592295814031155,
+      "best_trade": 0.0306748466257669,
+      "worst_trade": 0.027551020408163287,
+      "wins": 3,
+      "total_volume": 9.0
+    }
+  ],
+  "open_positions": [
+    {
+      "id": 3,
+      "timestamp": "2026-03-01T11:17:10.775622+00:00",
+      "strategy": "cross_platform_arb",
+      "market_id": "0xbb4d51e6364066d92eb6f9b8413dd7193de70966736044463b205834805a1f3b",
+      "market_question": "Will the Iranian regime fall before 2027?",
+      "side": "BOTH",
+      "token_id": "10991849228756847439673778874175365458450913336396982752046655649803657501964|106181075047366745139197108801635573283215248045056329679360376976893016488727",
+      "price": 0.98,
+      "size_usd": 3.0,
+      "edge_pct": 0.018367346938775526,
+      "dry_run": 1,
+      "order_id": "dry_run_mkt_1772363830|dry_run_mkt_1772363830",
+      "pnl": 0.027551020408163287,
+      "status": "open",
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "id": 2,
+      "timestamp": "2026-03-01T11:17:10.773332+00:00",
+      "strategy": "cross_platform_arb",
+      "market_id": "0x561cd8d035bac38ed04e23d7882a126da38d7ead9d6679f722ad62c0c9d54ad2",
+      "market_question": "Will Iran close the Strait of Hormuz by March 31?",
+      "side": "BOTH",
+      "token_id": "11259214629259962188961658360673801608680858594287954976598964541495296876564|50005952796518586292778222685298750447930027597009327781466731324939399757427",
+      "price": 0.98,
+      "size_usd": 3.0,
+      "edge_pct": 0.018367346938775526,
+      "dry_run": 1,
+      "order_id": "dry_run_mkt_1772363830|dry_run_mkt_1772363830",
+      "pnl": 0.027551020408163287,
+      "status": "open",
+      "closed_at": null,
+      "close_reason": null
+    },
+    {
+      "id": 1,
+      "timestamp": "2026-03-01T11:17:10.770200+00:00",
+      "strategy": "cross_platform_arb",
+      "market_id": "0x4b7cd1050a0c87baebe5e6008260d14b2a9d6d705cf7e7daac1be94ad5253b27",
+      "market_question": "US strikes Iraq by February 28?",
+      "side": "BOTH",
+      "token_id": "45900834520961763856469490579496577263935972652383164286919801069052546628321|76868450041854708983824610815381724379859101558744120758232956444363922685321",
+      "price": 0.978,
+      "size_usd": 3.0,
+      "edge_pct": 0.020449897750511266,
+      "dry_run": 1,
+      "order_id": "dry_run_mkt_1772363830|dry_run_mkt_1772363830",
+      "pnl": 0.0306748466257669,
+      "status": "open",
+      "closed_at": null,
+      "close_reason": null
+    }
+  ],
+  "closed_positions": [],
+  "health": {
+    "bot_active": false,
+    "last_trade": "2026-03-01T11:17:10.775622+00:00",
+    "timestamp": "2026-03-01T11:18:47.162730"
+  },
+  "exported_at": "2026-03-01T11:18:47.162732",
+  "control": {
+    "mode": "dry_run",
+    "trading_enabled": true,
+    "halt_reason": null,
+    "updated_by": "bot",
+    "updated_at": "2026-03-01T11:18:47.160610+00:00",
+    "last_bot_run": "2026-03-01T11:18:47.160598+00:00"
+  }
+}
