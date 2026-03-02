@@ -36,7 +36,9 @@ from core.risk_manager import RiskManager
 logger = logging.getLogger("polybot.sports")
 
 # Keywords that identify sports markets
+# AGGRESSIVE: Expanded keywords — sports + geopolitics + trending events
 SPORTS_KEYWORDS = [
+    # Sports
     "win", "beat", "defeat", "champion", "championship", "title",
     "nba", "nfl", "mlb", "nhl", "mls", "premier league", "la liga",
     "serie a", "bundesliga", "ligue 1", "champions league", "europa",
@@ -49,6 +51,16 @@ SPORTS_KEYWORDS = [
     "fifa", "euro 2026", "copa america",
     "mvp", "scoring", "points", "goals", "touchdowns",
     "lebron", "curry", "mahomes", "messi", "ronaldo",
+    # Geopolitics & current events (Iran, war, etc. — volatile = opportunity)
+    "iran", "israel", "war", "strike", "military", "attack", "ceasefire",
+    "sanctions", "nuclear", "missile", "troops", "invasion",
+    "russia", "ukraine", "china", "taiwan", "nato",
+    "trump", "biden", "congress", "senate", "executive order",
+    "tariff", "trade war", "oil price", "crude", "opec",
+    "fed", "interest rate", "inflation", "recession",
+    "crypto", "bitcoin", "ethereum", "sec", "regulation",
+    "ai", "openai", "google", "apple", "tesla", "spacex",
+    "election", "poll", "approval rating", "impeach",
 ]
 
 # Sport category detection patterns
@@ -127,11 +139,23 @@ class SportsIntelStrategy:
         Long-dated futures (World Cup, Stanley Cup months away) tie up capital
         for too long and produce zero PnL.
         """
-        # Search with multiple sports terms
+        # AGGRESSIVE: Search sports + geopolitics + trending events
         all_markets = []
-        search_terms = ["NBA", "NFL", "soccer", "UFC", "tennis", "MLB",
-                       "champion", "win game", "Super Bowl", "World Cup",
-                       "Premier League", "F1", "Grand Prix"]
+        search_terms = [
+            # Sports
+            "NBA", "NFL", "soccer", "UFC", "tennis", "MLB",
+            "champion", "win game", "Super Bowl", "World Cup",
+            "Premier League", "F1", "Grand Prix", "NHL", "boxing",
+            # Geopolitics — high-volatility events = big opportunities
+            "Iran", "Israel", "war", "military", "strike",
+            "Russia", "Ukraine", "China", "Taiwan",
+            "Trump", "tariff", "sanctions", "ceasefire",
+            # Finance & tech
+            "Bitcoin", "crypto", "Fed", "interest rate",
+            "oil", "recession", "AI", "Tesla", "SpaceX",
+            # General high-volume events
+            "election", "approval", "executive order",
+        ]
 
         for term in search_terms:
             try:
@@ -147,7 +171,8 @@ class SportsIntelStrategy:
         # Also search via Gamma API tags
         try:
             async with httpx.AsyncClient(timeout=15) as client:
-                for tag in ["sports", "basketball", "football", "soccer", "mma"]:
+                for tag in ["sports", "basketball", "football", "soccer", "mma",
+                            "politics", "crypto", "finance", "world", "science"]:
                     resp = await client.get(
                         f"{self.settings.GAMMA_HOST}/markets",
                         params={"tag": tag, "active": "true", "closed": "false", "limit": 50}
@@ -527,8 +552,8 @@ class SportsIntelStrategy:
         return None
 
     async def _execute_trade(self, opp: Dict) -> bool:
-        """Execute a sports trade. Arbs: $3, Value: $1."""
-        trade_size = 3.00 if opp["side"] == "BOTH" else 1.00  # Arbs get higher size
+        """Execute a sports/event trade. AGGRESSIVE: Arbs $5, Value $2."""
+        trade_size = 5.00 if opp["side"] == "BOTH" else 2.00  # AGGRESSIVE sizing
 
         approved, reason = self.risk_manager.approve_trade(
             trade_size, "sports_intel", opp["condition_id"])

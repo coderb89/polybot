@@ -32,13 +32,13 @@ from core.risk_manager import RiskManager
 
 logger = logging.getLogger("polybot.profit_taker")
 
-# Profit-taking thresholds
-PROFIT_TARGET_PCT = 0.25       # 25% price increase → sell for profit
-STOP_LOSS_PCT = -0.50          # 50% price drop → cut losses
-TRAILING_PROFIT_PCT = 0.15     # 15% gain → sell (more aggressive for faster turnover)
+# AGGRESSIVE profit-taking thresholds — fast turnover, maximize capital velocity
+PROFIT_TARGET_PCT = 0.15       # 15% price increase → sell for profit (was 25%)
+STOP_LOSS_PCT = -0.35          # 35% price drop → cut losses faster (was 50%)
+TRAILING_PROFIT_PCT = 0.08     # 8% gain after 12h → sell (was 15% after 24h)
 ARB_AUTO_CLOSE_HOURS = 1       # Close arb positions within 1 hour of resolution
-MAX_HOLD_HOURS = 168           # 7 days max hold — force close if no movement
-STALE_POSITION_HOURS = 48      # After 48h with < 5% movement, close to free capital
+MAX_HOLD_HOURS = 96            # 4 days max hold (was 7) — faster turnover
+STALE_POSITION_HOURS = 24      # After 24h with < 5% movement, close (was 48h)
 
 
 class ProfitTakerStrategy:
@@ -151,8 +151,8 @@ class ProfitTakerStrategy:
             return ("CLOSE", round(net_pnl, 4),
                     f"profit_target: {price_change_pct:+.0%} gain (entry={entry_price:.3f} now={current_price:.3f})")
 
-        # ── TRAILING PROFIT: After 24h, take smaller profits ──
-        if hold_hours > 24 and price_change_pct >= TRAILING_PROFIT_PCT and net_pnl > 0:
+        # ── TRAILING PROFIT: After 12h, take smaller profits (AGGRESSIVE) ──
+        if hold_hours > 12 and price_change_pct >= TRAILING_PROFIT_PCT and net_pnl > 0:
             return ("CLOSE", round(net_pnl, 4),
                     f"trailing_profit: {price_change_pct:+.0%} after {hold_hours:.0f}h")
 

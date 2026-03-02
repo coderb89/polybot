@@ -73,7 +73,7 @@ class GeneralScannerStrategy:
 
         now = datetime.now(timezone.utc)
 
-        for market in markets[:300]:  # Scan top 300 markets
+        for market in markets[:500]:  # AGGRESSIVE: Scan ALL 500 markets
             condition_id = market.get("condition_id", "")
 
             # Skip markets where we already have an open position (persisted in DB)
@@ -134,9 +134,9 @@ class GeneralScannerStrategy:
                 skipped_no_book += 1
                 continue
 
-            # Minimum liquidity check ($20)
+            # Minimum liquidity check — AGGRESSIVE: $10 (was $20)
             min_liquidity = min(yes_book.liquidity_usd, no_book.liquidity_usd)
-            if min_liquidity < 20:
+            if min_liquidity < 10:
                 skipped_low_liq += 1
                 continue
 
@@ -155,9 +155,10 @@ class GeneralScannerStrategy:
 
             # ── Opportunity Type 1: Arbitrage (YES + NO < $1.00) ──
             # Guaranteed profit on resolution regardless of outcome
-            if total < 0.99:
+            # AGGRESSIVE: wider threshold to catch more arbs
+            if total < 0.998:
                 arb_edge = 1.0 - total - 0.004  # Subtract ~0.4% fees
-                if arb_edge > 0.003:  # > 0.3% edge
+                if arb_edge > 0.001:  # > 0.1% edge — AGGRESSIVE (was 0.3%)
                     # Calculate annualized return for ranking
                     return_pct = arb_edge / total * 100  # % return
                     opportunities.append({
@@ -191,9 +192,10 @@ class GeneralScannerStrategy:
 
             # Buy YES side: value opportunity
             # REQUIRE end_date for value bets — no longshots without known resolution
-            if 0.05 <= yes_mid <= 0.77 and spread < 0.12 and hours_until is not None:
+            # AGGRESSIVE: wider price range, lower return threshold
+            if 0.05 <= yes_mid <= 0.85 and spread < 0.15 and hours_until is not None:
                 potential_return = (1.0 / yes_mid - 1.0) * 100  # % return if YES wins
-                if potential_return >= 30 and min_liquidity > 20:
+                if potential_return >= 15 and min_liquidity > 10:  # 15% min (was 30%)
                     opportunities.append({
                         "type": "value",
                         "condition_id": condition_id,
@@ -211,9 +213,9 @@ class GeneralScannerStrategy:
                     })
 
             # Buy NO side: value opportunity
-            elif 0.05 <= no_mid <= 0.77 and spread < 0.12 and hours_until is not None:
+            elif 0.05 <= no_mid <= 0.85 and spread < 0.15 and hours_until is not None:
                 potential_return = (1.0 / no_mid - 1.0) * 100
-                if potential_return >= 30 and min_liquidity > 20:
+                if potential_return >= 15 and min_liquidity > 10:  # 15% min (was 30%)
                     opportunities.append({
                         "type": "value",
                         "condition_id": condition_id,
@@ -257,7 +259,8 @@ class GeneralScannerStrategy:
         Arb trades: $3 USD (guaranteed profit, higher size = more profit)
         Value trades: $1 USD (speculative, keep size small)
         """
-        trade_size = 3.00 if opp["type"] == "arb" else 1.00
+        # AGGRESSIVE: Arb $5 (guaranteed), Value $2 (speculative)
+        trade_size = 5.00 if opp["type"] == "arb" else 2.00
 
         approved, reason = self.risk_manager.approve_trade(trade_size, "general_scanner", opp["condition_id"])
         if not approved:

@@ -145,7 +145,7 @@ class SpreadCaptureStrategy:
             spread_profit = 1.0 - total
             net_profit = spread_profit - 0.004  # ~0.4% fees both sides
 
-            if net_profit < 0.003:  # Minimum 0.3% guaranteed return
+            if net_profit < 0.001:  # AGGRESSIVE: 0.1% guaranteed return (was 0.3%)
                 continue
 
             return_pct = net_profit / total * 100
@@ -199,7 +199,7 @@ class SpreadCaptureStrategy:
 
     async def _execute_trade(self, opp: Dict) -> bool:
         """Execute spread capture trade. $3 per trade (guaranteed profit)."""
-        trade_size = 3.00  # Higher size for guaranteed profit trades
+        trade_size = 5.00  # AGGRESSIVE: $5 for guaranteed profit trades (was $3)
 
         approved, reason = self.risk_manager.approve_trade(
             trade_size, "spread_capture", opp["condition_id"])
@@ -217,7 +217,7 @@ class SpreadCaptureStrategy:
         # Re-check with live order book prices
         live_total = yes_book.mid_price + no_book.mid_price
         live_profit = 1.0 - live_total - 0.004
-        if live_profit < 0.003:
+        if live_profit < 0.001:  # AGGRESSIVE: 0.1% threshold (was 0.3%)
             logger.debug(f"Spread vanished: {live_total:.4f} (was {opp['total']:.4f})")
             return False
 

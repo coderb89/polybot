@@ -60,7 +60,7 @@ class MomentumScalperStrategy:
         now = datetime.now(timezone.utc)
         analyzed = 0
 
-        for market in markets[:400]:  # Scan broadly
+        for market in markets[:500]:  # AGGRESSIVE: Scan ALL markets
             condition_id = market.get("condition_id", "")
 
             if self.portfolio.has_open_position(condition_id):
@@ -91,7 +91,7 @@ class MomentumScalperStrategy:
             try:
                 resolution_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
                 hours_until = (resolution_dt - now).total_seconds() / 3600
-                if hours_until < 1 or hours_until > 168:
+                if hours_until < 1 or hours_until > 336:  # AGGRESSIVE: 14 days (was 7)
                     continue
             except Exception:
                 continue
@@ -103,7 +103,7 @@ class MomentumScalperStrategy:
                 continue
 
             min_liq = min(yes_book.liquidity_usd, no_book.liquidity_usd)
-            if min_liq < 15:
+            if min_liq < 5:  # AGGRESSIVE: $5 min liquidity (was $15)
                 continue
 
             yes_mid = yes_book.mid_price
@@ -134,8 +134,8 @@ class MomentumScalperStrategy:
                     continue
 
             # ── Type 2: High-conviction play ──
-            # If one side is 75%+ (strong favorite), buy it for quick reliable return
-            if yes_mid >= 0.75 and no_mid > 0.02:
+            # AGGRESSIVE: 65%+ favorite (was 75%) — more opportunities
+            if yes_mid >= 0.65 and no_mid > 0.02:
                 return_if_win = (1.0 / yes_mid - 1.0) * 100
                 if return_if_win >= 1.0:  # At least 1% return
                     opportunities.append({
@@ -154,7 +154,7 @@ class MomentumScalperStrategy:
                         "score": return_if_win * (168 / max(hours_until, 1)),
                     })
 
-            elif no_mid >= 0.75 and yes_mid > 0.02:
+            elif no_mid >= 0.65 and yes_mid > 0.02:  # AGGRESSIVE: 65% (was 75%)
                 return_if_win = (1.0 / no_mid - 1.0) * 100
                 if return_if_win >= 1.0:
                     opportunities.append({
@@ -174,11 +174,11 @@ class MomentumScalperStrategy:
                     })
 
             # ── Type 3: Value near-expiry ──
-            # Markets closing in <72h where one side is 20-70¢
-            if hours_until <= 72:
-                if 0.15 <= yes_mid <= 0.70 and yes_book.spread < 0.10:
+            # AGGRESSIVE: Markets closing in <168h, wider price range, 15% min
+            if hours_until <= 168:
+                if 0.10 <= yes_mid <= 0.80 and yes_book.spread < 0.15:
                     return_pct = (1.0 / yes_mid - 1.0) * 100
-                    if return_pct >= 30:
+                    if return_pct >= 15:  # 15% min (was 30%)
                         opportunities.append({
                             "type": "near_expiry_value",
                             "condition_id": condition_id,
@@ -194,9 +194,9 @@ class MomentumScalperStrategy:
                             "side": "BUY_YES",
                             "score": return_pct * 2,
                         })
-                elif 0.15 <= no_mid <= 0.70 and no_book.spread < 0.10:
+                elif 0.10 <= no_mid <= 0.80 and no_book.spread < 0.15:
                     return_pct = (1.0 / no_mid - 1.0) * 100
-                    if return_pct >= 30:
+                    if return_pct >= 15:  # 15% min (was 30%)
                         opportunities.append({
                             "type": "near_expiry_value",
                             "condition_id": condition_id,
@@ -225,8 +225,13 @@ class MomentumScalperStrategy:
         return opportunities
 
     async def _execute_trade(self, opp: Dict) -> bool:
-        """Execute trade. Arbs: $3 (guaranteed profit), Value: $1."""
-        trade_size = 3.00 if opp["side"] == "BOTH" else 1.00
+        """Execute trade. AGGRESSIVE: Arbs $5, Momentum $3, Value $2."""
+        if opp["side"] == "BOTH":
+            trade_size = 5.00  # Arbs: guaranteed profit
+        elif opp["type"].startswith("momentum"):
+            trade_size = 3.00  # High-conviction momentum plays
+        else:
+            trade_size = 2.00  # Near-expiry value bets
 
         approved, reason = self.risk_manager.approve_trade(trade_size, "momentum_scalper", opp["condition_id"])
         if not approved:

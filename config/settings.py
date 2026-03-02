@@ -43,12 +43,13 @@ class Settings:
     TELEGRAM_REPORT_ENABLED: bool = True
 
     # ─── Capital & Risk ─────────────────────────────────────────────
+    # AGGRESSIVE MODE: $100 paper trading, push to limits
     INITIAL_CAPITAL: float = field(default_factory=lambda: float(os.getenv("INITIAL_CAPITAL", "100")))
-    MAX_POSITION_PCT: float = 0.08            # 8% per trade (was 5%)
-    MAX_GLOBAL_EXPOSURE_PCT: float = 0.70     # 70% deployed (was 40%)
-    DAILY_LOSS_LIMIT_PCT: float = 0.15        # 15% daily loss limit (was 10%)
-    MAX_SIMULTANEOUS_POSITIONS: int = 20      # Up to 20 positions (was 10)
-    KELLY_FRACTION: float = 0.30              # 30% Kelly (was 25%)
+    MAX_POSITION_PCT: float = 0.15            # 15% per trade — AGGRESSIVE (was 8%)
+    MAX_GLOBAL_EXPOSURE_PCT: float = 0.90     # 90% deployed — almost full capital utilization
+    DAILY_LOSS_LIMIT_PCT: float = 0.25        # 25% daily loss tolerance — let it ride
+    MAX_SIMULTANEOUS_POSITIONS: int = 50      # Up to 50 positions — max volume
+    KELLY_FRACTION: float = 0.50              # 50% Kelly — full aggression
 
     # ─── Strategy Toggles ───────────────────────────────────────────
     ENABLE_WEATHER_ARB: bool = True
@@ -70,12 +71,12 @@ class Settings:
         {"name": "Sydney", "lat": -33.8688, "lon": 151.2093, "station": "YSSY"},
         {"name": "Dallas", "lat": 32.7767, "lon": -96.7970, "station": "KDFW"},
     ])
-    WEATHER_MIN_EDGE: float = 0.15
-    WEATHER_MIN_LIQUIDITY: float = 500.0
-    WEATHER_MAX_HOURS_OUT: int = 336  # 14 days max
-    WEATHER_MIN_HOURS_OUT: int = 12  # 12 hours minimum
-    WEATHER_SCAN_INTERVAL: int = 300
-    WEATHER_MAX_BET_USD: float = 5.0
+    WEATHER_MIN_EDGE: float = 0.08              # 8% edge min — AGGRESSIVE (was 15%)
+    WEATHER_MIN_LIQUIDITY: float = 100.0         # Lower liq req (was 500)
+    WEATHER_MAX_HOURS_OUT: int = 504             # 21 days max (was 14)
+    WEATHER_MIN_HOURS_OUT: int = 4               # 4 hours minimum (was 12)
+    WEATHER_SCAN_INTERVAL: int = 120             # Faster scanning (was 300)
+    WEATHER_MAX_BET_USD: float = 10.0            # $10 max bet (was $5)
 
     # ─── Market Maker Config ─────────────────────────────────────────
     MM_MIN_SPREAD: float = 0.03
@@ -87,12 +88,12 @@ class Settings:
     MM_INVENTORY_SKEW: float = 0.3
 
     # ─── Cross-Platform Arb Config ───────────────────────────────────
-    ARB_MIN_EDGE_PCT: float = 0.015
-    ARB_SCAN_INTERVAL: int = 10
-    ARB_MAX_POSITION_USD: float = 20.0
+    ARB_MIN_EDGE_PCT: float = 0.005           # 0.5% edge min — AGGRESSIVE (was 1.5%)
+    ARB_SCAN_INTERVAL: int = 5                # Faster scanning
+    ARB_MAX_POSITION_USD: float = 50.0        # Up to $50 per arb (was $20)
     ARB_POLY_FEE: float = 0.001
     ARB_KALSHI_FEE: float = 0.007
-    ARB_MIN_HOURS_TO_RESOLUTION: int = 24  # 24 hours minimum
+    ARB_MIN_HOURS_TO_RESOLUTION: int = 2      # 2 hours minimum (was 24)
 
     # ─── Portfolio / Reporting ──────────────────────────────────────
     REPORT_INTERVAL_SECONDS: int = 3600
