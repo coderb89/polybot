@@ -109,21 +109,24 @@ class AIForecasterStrategy:
     async def _get_candidate_markets(self) -> List[Dict]:
         """
         Fetch and filter markets for AI analysis.
-        We want markets with:
-        - Decent liquidity (worth trading)
-        - Resolution within 30 days (capital efficiency)
-        - Mid-range prices (some uncertainty = opportunity)
-        - Not already traded by us
+        AGGRESSIVE: Accept markets with or without end dates.
+        Real price/liquidity checks happen later via order books.
         """
         markets = await self.poly_client.get_markets(active_only=True)
         now = datetime.now(timezone.utc)
         candidates = []
+        skipped_no_tokens = 0
+        skipped_too_close = 0
+        skipped_too_far = 0
+        skipped_no_question = 0
+        skipped_position = 0
 
-        for market in markets[:300]:
+        for market in markets[:500]:  # Scan all 500
             condition_id = market.get("condition_id", "")
 
             # Skip markets we already have positions in
             if self.portfolio.has_open_position(condition_id):
+                skipped_position += 1
                 continue
 
             # Skip recently traded (4-hour cooldown for AI trades)
@@ -134,14 +137,17 @@ class AIForecasterStrategy:
             # Must have YES/NO tokens
             tokens = market.get("tokens", [])
             if len(tokens) < 2:
+                skipped_no_tokens += 1
                 continue
 
             yes_token = next((t for t in tokens if t.get("outcome", "").upper() == "YES"), None)
             no_token = next((t for t in tokens if t.get("outcome", "").upper() == "NO"), None)
             if not yes_token or not no_token:
+                skipped_no_tokens += 1
                 continue
 
-            # Check resolution timeline — 30-day max
+            # Check resolution timeline if available — 30-day max
+            # But ALLOW markets without end dates (many Polymarket markets lack this)
             end_date = market.get("end_date_iso", "")
             hours_until = None
             if end_date:
@@ -149,25 +155,23 @@ class AIForecasterStrategy:
                     resolution_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
                     hours_until = (resolution_dt - now).total_seconds() / 3600
                     if hours_until < MIN_HOURS_TO_RESOLUTION:
+                        skipped_too_close += 1
                         continue
                     if hours_until > MAX_HOURS_TO_RESOLUTION:
+                        skipped_too_far += 1
                         continue
                 except Exception:
-                    continue  # Require valid end date for AI trades
-            else:
-                continue  # Skip markets without end dates
-
-            # Check prices — we want markets with genuine uncertainty
-            yes_price = float(yes_token.get("price", 0) or 0)
-            no_price = float(no_token.get("price", 0) or 0)
-
-            if yes_price < PRICE_RANGE[0] or yes_price > PRICE_RANGE[1]:
-                continue
+                    pass  # Treat as unknown timeline
 
             # Must have a real question (not empty)
             question = market.get("question", "")
             if not question or len(question) < 10:
+                skipped_no_question += 1
                 continue
+
+            # Get prices from token metadata (may be 0 — real prices come from order book later)
+            yes_price = float(yes_token.get("price", 0) or 0)
+            no_price = float(no_token.get("price", 0) or 0)
 
             candidates.append({
                 "condition_id": condition_id,
@@ -182,11 +186,20 @@ class AIForecasterStrategy:
                 "liquidity": float(market.get("liquidity", 0) or 0),
             })
 
-        # Sort by: prefer higher volume (more interesting markets), closer resolution
-        candidates.sort(
-            key=lambda m: (m["volume"] * (720 / max(m["hours_until"], 1))),
-            reverse=True,
+        logger.info(
+            f"AIForecaster filter stats: no_tokens={skipped_no_tokens}, "
+            f"too_close={skipped_too_close}, too_far={skipped_too_far}, "
+            f"no_question={skipped_no_question}, has_position={skipped_position}"
         )
+
+        # Sort by volume (most liquid/interesting markets first)
+        # Markets with known resolution get a boost
+        def sort_key(m):
+            vol = m["volume"]
+            time_boost = (720 / max(m["hours_until"], 1)) if m["hours_until"] else 1.0
+            return vol * time_boost
+
+        candidates.sort(key=sort_key, reverse=True)
 
         return candidates[:20]  # Top 20 candidates for AI analysis
 
@@ -211,6 +224,11 @@ class AIForecasterStrategy:
 
         yes_mid = yes_book.mid_price
         no_mid = no_book.mid_price
+
+        # Price range check — need genuine uncertainty for AI to find edges
+        if yes_mid < PRICE_RANGE[0] or yes_mid > PRICE_RANGE[1]:
+            logger.debug(f"Skipping (price out of range {yes_mid:.3f}): {question[:50]}")
+            return False
 
         # Step 2: Ask AI for probability estimate
         ai_prob = await self.ai_client.get_probability(
