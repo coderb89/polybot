@@ -1,0 +1,314 @@
+"""
+AI Superforecaster Strategy
+Adapted from Polymarket/agents official framework.
+
+Uses OpenAI LLM as a "superforecaster" to independently estimate market probabilities,
+then trades when the AI's estimate diverges significantly from the market price.
+
+This is the most sophisticated strategy — it uses reasoning and world knowledge
+rather than just price patterns or arbitrage math.
+
+Flow:
+1. Fetch top markets from Gamma API (30-day window, decent liquidity)
+2. For each candidate market, ask the LLM to estimate P(YES)
+3. Compare LLM probability to current market price
+4. If edge > 10%, execute a value trade
+5. Max 5 LLM calls per cycle (cost control), max 3 trades
+
+Trade rules:
+- $3 USD per AI-driven value trade
+- Minimum 10% edge (LLM vs market price)
+- 30-day max timeline
+- Requires OPENAI_API_KEY — gracefully skips if not set
+"""
+
+import asyncio
+import logging
+import time
+from datetime import datetime, timezone
+from typing import List, Dict, Optional
+
+from core.ai_client import AIClient
+from core.polymarket_client import PolymarketClient
+from core.portfolio import Portfolio, Trade
+from core.risk_manager import RiskManager
+
+logger = logging.getLogger("polybot.ai_forecaster")
+
+# ─── Strategy Constants ──────────────────────────────────────────────
+MAX_LLM_CALLS_PER_CYCLE = 5       # Cost control: max 5 API calls per run
+MAX_TRADES_PER_CYCLE = 3          # Max 3 AI-driven trades per run
+MIN_EDGE_PCT = 0.10               # 10% minimum edge to trade
+TRADE_SIZE_USD = 3.00             # $3 per AI trade
+MIN_LIQUIDITY_USD = 50.0          # Need decent liquidity for value bets
+MIN_HOURS_TO_RESOLUTION = 4       # At least 4 hours out
+MAX_HOURS_TO_RESOLUTION = 720     # 30-day max timeline
+PRICE_RANGE = (0.10, 0.90)        # Only trade markets with some uncertainty
+
+
+class AIForecasterStrategy:
+    """Uses LLM superforecaster to identify mispriced prediction markets."""
+
+    def __init__(self, settings, portfolio: Portfolio, risk_manager: RiskManager):
+        self.settings = settings
+        self.portfolio = portfolio
+        self.risk_manager = risk_manager
+        self.poly_client = PolymarketClient(settings)
+        self.ai_client = AIClient(
+            api_key=getattr(settings, 'OPENAI_API_KEY', ''),
+            model=getattr(settings, 'AI_MODEL', 'gpt-4o-mini'),
+        )
+        self.traded_markets: Dict[str, float] = {}  # condition_id -> last_trade_time
+
+    async def run_once(self):
+        """Single AI forecasting cycle."""
+        if not self.ai_client.enabled:
+            logger.info("AIForecaster: SKIPPED (no OPENAI_API_KEY)")
+            return
+
+        logger.info("AIForecaster: scanning markets with AI superforecaster")
+
+        try:
+            # Step 1: Get candidate markets
+            candidates = await self._get_candidate_markets()
+            logger.info(f"AIForecaster: {len(candidates)} candidate markets for AI analysis")
+
+            if not candidates:
+                logger.info("AIForecaster: no suitable candidates this cycle")
+                return
+
+            # Step 2: Run AI analysis on top candidates
+            trades_executed = 0
+            llm_calls = 0
+
+            for market in candidates:
+                if llm_calls >= MAX_LLM_CALLS_PER_CYCLE:
+                    logger.info(f"AIForecaster: hit LLM call limit ({MAX_LLM_CALLS_PER_CYCLE})")
+                    break
+                if trades_executed >= MAX_TRADES_PER_CYCLE:
+                    logger.info(f"AIForecaster: hit trade limit ({MAX_TRADES_PER_CYCLE})")
+                    break
+
+                result = await self._analyze_and_trade(market)
+                llm_calls += 1
+
+                if result:
+                    trades_executed += 1
+
+                # Rate limit between LLM calls
+                await asyncio.sleep(1.0)
+
+            logger.info(
+                f"AIForecaster complete: {llm_calls} LLM calls, "
+                f"{trades_executed} trades executed"
+            )
+
+        except Exception as e:
+            logger.error(f"AIForecaster error: {e}", exc_info=True)
+
+    async def _get_candidate_markets(self) -> List[Dict]:
+        """
+        Fetch and filter markets for AI analysis.
+        We want markets with:
+        - Decent liquidity (worth trading)
+        - Resolution within 30 days (capital efficiency)
+        - Mid-range prices (some uncertainty = opportunity)
+        - Not already traded by us
+        """
+        markets = await self.poly_client.get_markets(active_only=True)
+        now = datetime.now(timezone.utc)
+        candidates = []
+
+        for market in markets[:300]:
+            condition_id = market.get("condition_id", "")
+
+            # Skip markets we already have positions in
+            if self.portfolio.has_open_position(condition_id):
+                continue
+
+            # Skip recently traded (4-hour cooldown for AI trades)
+            if condition_id in self.traded_markets:
+                if time.time() - self.traded_markets[condition_id] < 14400:
+                    continue
+
+            # Must have YES/NO tokens
+            tokens = market.get("tokens", [])
+            if len(tokens) < 2:
+                continue
+
+            yes_token = next((t for t in tokens if t.get("outcome", "").upper() == "YES"), None)
+            no_token = next((t for t in tokens if t.get("outcome", "").upper() == "NO"), None)
+            if not yes_token or not no_token:
+                continue
+
+            # Check resolution timeline — 30-day max
+            end_date = market.get("end_date_iso", "")
+            hours_until = None
+            if end_date:
+                try:
+                    resolution_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+                    hours_until = (resolution_dt - now).total_seconds() / 3600
+                    if hours_until < MIN_HOURS_TO_RESOLUTION:
+                        continue
+                    if hours_until > MAX_HOURS_TO_RESOLUTION:
+                        continue
+                except Exception:
+                    continue  # Require valid end date for AI trades
+            else:
+                continue  # Skip markets without end dates
+
+            # Check prices — we want markets with genuine uncertainty
+            yes_price = float(yes_token.get("price", 0) or 0)
+            no_price = float(no_token.get("price", 0) or 0)
+
+            if yes_price < PRICE_RANGE[0] or yes_price > PRICE_RANGE[1]:
+                continue
+
+            # Must have a real question (not empty)
+            question = market.get("question", "")
+            if not question or len(question) < 10:
+                continue
+
+            candidates.append({
+                "condition_id": condition_id,
+                "question": question,
+                "description": market.get("description", ""),
+                "yes_token_id": yes_token.get("token_id"),
+                "no_token_id": no_token.get("token_id"),
+                "yes_price": yes_price,
+                "no_price": no_price,
+                "hours_until": hours_until,
+                "volume": float(market.get("volume", 0) or 0),
+                "liquidity": float(market.get("liquidity", 0) or 0),
+            })
+
+        # Sort by: prefer higher volume (more interesting markets), closer resolution
+        candidates.sort(
+            key=lambda m: (m["volume"] * (720 / max(m["hours_until"], 1))),
+            reverse=True,
+        )
+
+        return candidates[:20]  # Top 20 candidates for AI analysis
+
+    async def _analyze_and_trade(self, market: Dict) -> bool:
+        """
+        Run AI superforecaster on a single market and trade if edge found.
+        Returns True if a trade was executed.
+        """
+        question = market["question"]
+        condition_id = market["condition_id"]
+
+        # Step 1: Get order book for real liquidity check
+        yes_book = await self.poly_client.get_order_book(market["yes_token_id"])
+        no_book = await self.poly_client.get_order_book(market["no_token_id"])
+
+        if not yes_book or not no_book:
+            return False
+
+        min_liq = min(yes_book.liquidity_usd, no_book.liquidity_usd)
+        if min_liq < MIN_LIQUIDITY_USD:
+            return False
+
+        yes_mid = yes_book.mid_price
+        no_mid = no_book.mid_price
+
+        # Step 2: Ask AI for probability estimate
+        ai_prob = await self.ai_client.get_probability(
+            question=question,
+            description=market.get("description", ""),
+            current_yes_price=yes_mid,
+            current_no_price=no_mid,
+            hours_until_resolution=market["hours_until"],
+        )
+
+        if ai_prob is None:
+            logger.debug(f"AI returned no probability for: {question[:60]}")
+            return False
+
+        # Step 3: Calculate edge
+        yes_edge = ai_prob - yes_mid        # Positive = AI thinks YES is underpriced
+        no_edge = (1 - ai_prob) - no_mid    # Positive = AI thinks NO is underpriced
+
+        best_edge = max(abs(yes_edge), abs(no_edge))
+        trade_side = "BUY_YES" if yes_edge > no_edge else "BUY_NO"
+        edge = yes_edge if trade_side == "BUY_YES" else no_edge
+
+        logger.info(
+            f"AI analysis: '{question[:55]}' | "
+            f"AI P(YES)={ai_prob:.2f} vs Market={yes_mid:.3f} | "
+            f"Edge: {edge*100:.1f}% ({trade_side})"
+        )
+
+        # Step 4: Trade if edge is significant
+        if edge < MIN_EDGE_PCT:
+            logger.debug(f"Edge too small ({edge*100:.1f}% < {MIN_EDGE_PCT*100:.0f}%) — skip")
+            return False
+
+        # Step 5: Execute trade
+        return await self._execute_trade(market, trade_side, edge, ai_prob, yes_mid, no_mid)
+
+    async def _execute_trade(
+        self,
+        market: Dict,
+        side: str,
+        edge: float,
+        ai_prob: float,
+        yes_price: float,
+        no_price: float,
+    ) -> bool:
+        """Execute an AI-driven value trade."""
+        trade_size = TRADE_SIZE_USD
+        condition_id = market["condition_id"]
+
+        approved, reason = self.risk_manager.approve_trade(
+            trade_size, "ai_forecaster", condition_id
+        )
+        if not approved:
+            logger.info(f"AI trade rejected: {reason}")
+            return False
+
+        token_id = market["yes_token_id"] if side == "BUY_YES" else market["no_token_id"]
+        price = yes_price if side == "BUY_YES" else no_price
+
+        logger.info(
+            f"[AI FORECASTER] {side} | {market['question'][:55]} | "
+            f"@ {price:.3f} | AI P(YES)={ai_prob:.2f} | "
+            f"Edge: {edge*100:.1f}% | Size: ${trade_size:.2f} | "
+            f"Closes: {market['hours_until']:.0f}h"
+        )
+
+        result = await self.poly_client.place_market_order(
+            token_id, trade_size, "BUY", self.settings.DRY_RUN
+        )
+
+        if result.success:
+            trade = Trade(
+                id=None,
+                timestamp=datetime.utcnow().isoformat(),
+                strategy="ai_forecaster",
+                market_id=condition_id,
+                market_question=market["question"],
+                side=side,
+                token_id=token_id,
+                price=price,
+                size_usd=trade_size,
+                edge_pct=edge,
+                dry_run=self.settings.DRY_RUN,
+                order_id=result.order_id,
+                pnl=None,
+                status="open",
+            )
+            self.portfolio.log_trade(trade)
+            self.traded_markets[condition_id] = time.time()
+
+            logger.info(
+                f"AI trade executed! {side} @ ${price:.3f} | "
+                f"Edge: {edge*100:.1f}% | Resolves: {market['hours_until']:.0f}h"
+            )
+            return True
+
+        logger.warning(f"AI trade failed for: {market['question'][:50]}")
+        return False
+
+    async def cleanup(self):
+        logger.info(f"AIForecaster cleanup: {len(self.traded_markets)} markets analyzed")

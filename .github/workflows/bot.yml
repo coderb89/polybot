@@ -123,6 +123,8 @@ jobs:
           KALSHI_API_KEY: ${{ secrets.KALSHI_API_KEY }}
           KALSHI_API_SECRET: ${{ secrets.KALSHI_API_SECRET }}
           INITIAL_CAPITAL: ${{ secrets.INITIAL_CAPITAL || '100' }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          AI_MODEL: ${{ secrets.AI_MODEL || 'gpt-4o-mini' }}
           GITHUB_ACTIONS: 'true'
         run: python main.py --export-dashboard
 

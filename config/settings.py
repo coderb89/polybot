@@ -51,6 +51,11 @@ class Settings:
     MAX_SIMULTANEOUS_POSITIONS: int = 50      # Up to 50 positions — max volume
     KELLY_FRACTION: float = 0.50              # 50% Kelly — full aggression
 
+    # ─── AI Superforecaster (from Polymarket/agents) ─────────────────
+    OPENAI_API_KEY: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
+    AI_MODEL: str = field(default_factory=lambda: os.getenv("AI_MODEL", "gpt-4o-mini"))
+    ENABLE_AI_FORECASTER: bool = True  # Auto-disables if no OPENAI_API_KEY
+
     # ─── Strategy Toggles ───────────────────────────────────────────
     ENABLE_WEATHER_ARB: bool = True
     ENABLE_MARKET_MAKER: bool = False  # Disabled - requires continuous quoting

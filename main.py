@@ -3,7 +3,7 @@
 PolyBot - Polymarket Multi-Strategy Trading Bot
 
 Strategies: WeatherArb | CrossPlatformArb | GeneralScanner | MomentumScalper
-            SpreadCapture | SportsIntel + ProfitTaker (active sell/stop-loss)
+            SpreadCapture | SportsIntel | AIForecaster + ProfitTaker (active sell/stop-loss)
 
 Arb trades: $3/trade (guaranteed profit) | Value trades: $1/trade
 Starting capital: $100 USDC on Polygon
@@ -32,6 +32,7 @@ from strategies.momentum_scalper import MomentumScalperStrategy
 from strategies.spread_capture import SpreadCaptureStrategy
 from strategies.sports_intel import SportsIntelStrategy
 from strategies.profit_taker import ProfitTakerStrategy
+from strategies.ai_forecaster import AIForecasterStrategy
 from utils.logger import setup_logger
 from utils.telegram_alerts import TelegramAlerter
 
@@ -178,6 +179,8 @@ class PolyBot:
             self.strategies.append(SpreadCaptureStrategy(self.settings, self.portfolio, self.risk_manager))
         if self.settings.ENABLE_SPORTS_INTEL:
             self.strategies.append(SportsIntelStrategy(self.settings, self.portfolio, self.risk_manager))
+        if self.settings.ENABLE_AI_FORECASTER:
+            self.strategies.append(AIForecasterStrategy(self.settings, self.portfolio, self.risk_manager))
 
         logger.info(f"PolyBot initialized with {len(self.strategies)} strategies")
         mode_str = "LIVE TRADING" if not self.settings.DRY_RUN else "DRY RUN"
