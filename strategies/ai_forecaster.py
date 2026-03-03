@@ -43,7 +43,7 @@ TRADE_SIZE_USD = 3.00             # $3 per AI trade
 MIN_LIQUIDITY_USD = 50.0          # Need decent liquidity for value bets
 MIN_HOURS_TO_RESOLUTION = 4       # At least 4 hours out
 MAX_HOURS_TO_RESOLUTION = 720     # 30-day max timeline
-PRICE_RANGE = (0.10, 0.90)        # Only trade markets with some uncertainty
+PRICE_RANGE = (0.03, 0.97)        # Wide range — AI can find edges at extremes too
 
 
 class AIForecasterStrategy:
