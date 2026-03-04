@@ -45,9 +45,9 @@ class Settings:
     # ─── Capital & Risk ─────────────────────────────────────────────
     # AGGRESSIVE MODE: $100 paper trading, push to limits
     INITIAL_CAPITAL: float = field(default_factory=lambda: float(os.getenv("INITIAL_CAPITAL", "100")))
-    MAX_POSITION_PCT: float = 0.15            # 15% per trade — AGGRESSIVE (was 8%)
-    MAX_GLOBAL_EXPOSURE_PCT: float = 0.90     # 90% deployed — almost full capital utilization
-    DAILY_LOSS_LIMIT_PCT: float = 0.25        # 25% daily loss tolerance — let it ride
+    MAX_POSITION_PCT: float = 0.20            # 20% per trade — room for $10 longshots
+    MAX_GLOBAL_EXPOSURE_PCT: float = 0.95     # 95% deployed — deploy nearly all capital
+    DAILY_LOSS_LIMIT_PCT: float = 0.30        # 30% daily loss tolerance — let it ride
     MAX_SIMULTANEOUS_POSITIONS: int = 50      # Up to 50 positions — max volume
     KELLY_FRACTION: float = 0.50              # 50% Kelly — full aggression
 

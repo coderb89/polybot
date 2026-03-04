@@ -303,15 +303,26 @@ class AIForecasterStrategy:
         yes_price: float,
         no_price: float,
     ) -> bool:
-        """Execute an AI-driven value trade."""
-        trade_size = TRADE_SIZE_USD
+        """Execute an AI-driven value trade. Adaptive sizing: $10 ideal, min $3."""
+        trade_size = TRADE_SIZE_USD  # $10 ideal
         condition_id = market["condition_id"]
 
+        # Adaptive sizing: try $10, fall back to $5, then $3
         approved, reason = self.risk_manager.approve_trade(
             trade_size, "ai_forecaster", condition_id
         )
+        if not approved and trade_size > 5.0:
+            trade_size = 5.00
+            approved, reason = self.risk_manager.approve_trade(
+                trade_size, "ai_forecaster", condition_id
+            )
+        if not approved and trade_size > 3.0:
+            trade_size = 3.00
+            approved, reason = self.risk_manager.approve_trade(
+                trade_size, "ai_forecaster", condition_id
+            )
         if not approved:
-            logger.info(f"AI trade rejected: {reason}")
+            logger.info(f"AI trade rejected (even at ${trade_size:.0f}): {reason}")
             return False
 
         token_id = market["yes_token_id"] if side == "BUY_YES" else market["no_token_id"]
