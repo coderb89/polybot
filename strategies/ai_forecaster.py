@@ -42,7 +42,7 @@ TRADE_SIZE_USD = 10.00            # $10 per bet — targeting $50+ payouts
 MIN_LIQUIDITY_USD = 25.0          # Lower liq threshold for longshot markets
 MIN_HOURS_TO_RESOLUTION = 4       # At least 4 hours out
 MAX_HOURS_TO_RESOLUTION = 2160    # 90-day (3 month) max timeline
-PRICE_RANGE = (0.03, 0.97)        # Wide range — AI can find edges at extremes
+PRICE_RANGE = (0.02, 0.98)        # Ultra-wide — catch $0.02 longshots (50x payout)
 # Longshot sweet spot: tokens at $0.03-$0.25 give 4x-33x payout on $10
 
 
@@ -253,9 +253,12 @@ class AIForecasterStrategy:
         yes_mid = yes_book.mid_price
         no_mid = no_book.mid_price
 
-        # Price range check — need genuine uncertainty for AI to find edges
-        if yes_mid < PRICE_RANGE[0] or yes_mid > PRICE_RANGE[1]:
-            logger.debug(f"Price out of range ({yes_mid:.3f}): {question[:50]}")
+        # Price range check — at least ONE side must be in tradeable range
+        # If YES=$0.97 (favorite), NO=$0.03 (longshot) — NO side is the opportunity!
+        yes_in_range = PRICE_RANGE[0] <= yes_mid <= PRICE_RANGE[1]
+        no_in_range = PRICE_RANGE[0] <= no_mid <= PRICE_RANGE[1]
+        if not yes_in_range and not no_in_range:
+            logger.debug(f"Both prices out of range (YES={yes_mid:.3f}, NO={no_mid:.3f}): {question[:50]}")
             return False, "price_range"
 
         # Step 2: Ask AI for probability estimate
