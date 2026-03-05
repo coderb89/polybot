@@ -37,7 +37,7 @@ logger = logging.getLogger("polybot.ai_forecaster")
 # ─── Strategy Constants — LONGSHOT HUNTER ────────────────────────────
 MAX_LLM_CALLS_PER_CYCLE = 10      # More LLM calls to find the best longshots
 MAX_TRADES_PER_CYCLE = 5          # Up to 5 trades per run
-MIN_EDGE_PCT = 0.08               # 8% minimum edge to trade
+MIN_EDGE_PCT = 0.05               # 5% edge — low bar for longshots (5x+ payout compensates)
 TRADE_SIZE_USD = 10.00            # $10 per bet — targeting $50+ payouts
 MIN_LIQUIDITY_USD = 25.0          # Lower liq threshold for longshot markets
 MIN_HOURS_TO_RESOLUTION = 4       # At least 4 hours out
