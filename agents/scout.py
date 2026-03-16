@@ -90,6 +90,7 @@ async def run_scout() -> None:
     logger.info("Recon agent starting...")
 
     bot_token = os.getenv("DISCORD_BOT_TOKEN", "")
+    webhook_url = os.getenv("DISCORD_WEBHOOK_RECON", "")
     discord = DiscordAlerts(bot_token=bot_token)
 
     opps = await fetch_polymarket_opportunities()
@@ -132,8 +133,16 @@ async def run_scout() -> None:
         "footer": {"text": "PolyBot Recon Agent"},
     }
 
-    await discord._post_channel_message(SCOUT_INTEL_CHANNEL, embed)
-    logger.info(f"Recon report posted to #scout-intel ({len(new_opps)} new opportunities).")
+    if webhook_url:
+        await discord.send_webhook(
+            webhook_url,
+            embed=embed,
+            username="Recon",
+            avatar_url="https://i.imgur.com/4M34hi2.png",
+        )
+    else:
+        await discord._post_channel_message(SCOUT_INTEL_CHANNEL, embed)
+    logger.info(f"Recon report posted to #recon-intelligence ({len(new_opps)} new opportunities).")
 
     # Persist current opportunity questions for next run comparison
     _save_last_opportunities(current_questions)

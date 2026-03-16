@@ -176,6 +176,7 @@ async def run_analyst() -> None:
         return
 
     bot_token = os.getenv("DISCORD_BOT_TOKEN", "")
+    webhook_url = os.getenv("DISCORD_WEBHOOK_SAGE", "")
     discord = DiscordAlerts(bot_token=bot_token)
 
     db_stats = await asyncio.to_thread(fetch_trade_stats_from_db, DB_PATH)
@@ -274,7 +275,15 @@ async def run_analyst() -> None:
         "footer": {"text": "PolyBot Sage Agent"},
     }
 
-    await discord._post_channel_message(ANALYST_CHANNEL, embed)
-    logger.info("Sage report posted to #analyst-dashboard.")
+    if webhook_url:
+        await discord.send_webhook(
+            webhook_url,
+            embed=embed,
+            username="Sage",
+            avatar_url="https://i.imgur.com/OB0y6MR.png",
+        )
+    else:
+        await discord._post_channel_message(ANALYST_CHANNEL, embed)
+    logger.info("Sage report posted to #sage-analytics.")
 
     _save_last_post(today_str)

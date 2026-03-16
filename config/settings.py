@@ -44,6 +44,12 @@ class Settings:
     DISCORD_ALERT_CHANNEL_ID: str = field(default_factory=lambda: os.getenv("DISCORD_ALERT_CHANNEL_ID", ""))
     DISCORD_ANALYST_CHANNEL_ID: str = field(default_factory=lambda: os.getenv("DISCORD_ANALYST_CHANNEL_ID", ""))
 
+    # ─── Discord Agent Webhooks (per-agent identity) ─────────────────
+    DISCORD_WEBHOOK_RECON: str = field(default_factory=lambda: os.getenv("DISCORD_WEBHOOK_RECON", ""))
+    DISCORD_WEBHOOK_BLAZE: str = field(default_factory=lambda: os.getenv("DISCORD_WEBHOOK_BLAZE", ""))
+    DISCORD_WEBHOOK_SAGE: str = field(default_factory=lambda: os.getenv("DISCORD_WEBHOOK_SAGE", ""))
+    DISCORD_WEBHOOK_SENTINEL: str = field(default_factory=lambda: os.getenv("DISCORD_WEBHOOK_SENTINEL", ""))
+
     # ─── Telegram Alerts (DEPRECATED — use Discord instead) ─────────
     TELEGRAM_BOT_TOKEN: str = field(default_factory=lambda: os.getenv("TELEGRAM_BOT_TOKEN", ""))
     TELEGRAM_CHAT_ID: str = field(default_factory=lambda: os.getenv("TELEGRAM_CHAT_ID", ""))

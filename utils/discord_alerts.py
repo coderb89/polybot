@@ -188,6 +188,55 @@ class DiscordAlerts:
         }
         await self._post_channel_message(channel_id, embed)
 
+    async def send_webhook(
+        self,
+        webhook_url: str,
+        content: str = None,
+        embed: dict = None,
+        username: str = None,
+        avatar_url: str = None,
+    ) -> bool:
+        """POST a message directly to a Discord webhook URL.
+
+        Supports custom username override, avatar, and embeds — allowing each
+        agent to appear in Discord with its own identity.
+
+        Args:
+            webhook_url: Full Discord webhook URL
+                         (https://discord.com/api/webhooks/{id}/{token}).
+            content:     Plain-text message content.
+            embed:       Single embed dict (will be wrapped in a list).
+            username:    Override display name for this message.
+            avatar_url:  Override avatar image URL for this message.
+
+        Returns:
+            True if Discord accepted the payload (200 or 204), False otherwise.
+        """
+        if not webhook_url:
+            return False
+
+        payload: dict = {}
+        if content:
+            payload["content"] = content
+        if embed:
+            payload["embeds"] = [embed]
+        if username:
+            payload["username"] = username
+        if avatar_url:
+            payload["avatar_url"] = avatar_url
+
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(webhook_url, json=payload)
+                if resp.status_code not in (200, 204):
+                    logger.warning(
+                        f"Discord webhook returned {resp.status_code}: {resp.text[:200]}"
+                    )
+                return resp.status_code in (200, 204)
+        except Exception as exc:
+            logger.warning(f"Discord webhook error: {exc}")
+            return False
+
 
 def _get_webhook_url() -> str:
     """Return the configured Discord webhook URL, or empty string if not set."""

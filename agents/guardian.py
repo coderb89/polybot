@@ -129,6 +129,7 @@ async def run_guardian() -> None:
     logger.info("Sentinel agent starting...")
 
     bot_token = os.getenv("DISCORD_BOT_TOKEN", "")
+    webhook_url = os.getenv("DISCORD_WEBHOOK_SENTINEL", "")
     discord = DiscordAlerts(bot_token=bot_token)
 
     control, daily_pnl = await asyncio.gather(
@@ -168,7 +169,14 @@ async def run_guardian() -> None:
                     "timestamp": now_iso,
                     "footer": {"text": "PolyBot Sentinel"},
                 }
-                await discord._post_channel_message(GUARDIAN_CHANNEL, embed)
+                if webhook_url:
+                    await discord.send_webhook(
+                        webhook_url, embed=embed,
+                        username="Sentinel",
+                        avatar_url="https://i.imgur.com/fJRm4Vk.png",
+                    )
+                else:
+                    await discord._post_channel_message(GUARDIAN_CHANNEL, embed)
                 _mark_sent(sent_data, alert_key)
                 alert_count += 1
                 logger.warning("Sentinel: trading is halted — alert sent.")
@@ -193,7 +201,14 @@ async def run_guardian() -> None:
                     "timestamp": now_iso,
                     "footer": {"text": "PolyBot Sentinel"},
                 }
-                await discord._post_channel_message(GUARDIAN_CHANNEL, embed)
+                if webhook_url:
+                    await discord.send_webhook(
+                        webhook_url, embed=embed,
+                        username="Sentinel",
+                        avatar_url="https://i.imgur.com/fJRm4Vk.png",
+                    )
+                else:
+                    await discord._post_channel_message(GUARDIAN_CHANNEL, embed)
                 _mark_sent(sent_data, alert_key)
                 alert_count += 1
                 logger.warning(f"Sentinel: daily P&L critical loss alert sent (${daily_pnl:.4f}).")
